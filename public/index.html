@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="Podsumowanie" />
 <title>Podsumowanie dnia</title>
 <link rel="manifest" href="manifest.json" />
 <meta name="theme-color" content="#eef2f1" media="(prefers-color-scheme: light)" />
@@ -240,6 +243,65 @@
   @media (prefers-reduced-motion: no-preference) {
     nav button { transition: color 0.15s; }
   }
+
+  /* ===== układ mobilny: czytelne listy, większe cele dotyku ===== */
+  html { -webkit-tap-highlight-color: transparent; }
+  button, summary { touch-action: manipulation; }
+  body { font-size: 15px; }
+  header { padding: 16px 14px 4px; }
+  main { padding: 6px 12px calc(96px + env(safe-area-inset-bottom, 0px)); }
+  .card { padding: 12px 14px; border-radius: 14px; margin-bottom: 10px; }
+  h2.sec { font-size: 0.82rem; letter-spacing: 0.02em; margin: 18px 4px 8px; }
+  .cap1::first-letter { text-transform: uppercase; }
+  ul.rows li { padding: 10px 0; gap: 10px; }
+  ul.rows b, ul.lessons b { display: block; font-weight: 600; font-size: 0.95rem; overflow-wrap: anywhere; }
+  ul.rows small, ul.lessons small { display: block; margin-top: 2px; font-size: 0.8rem; color: var(--muted); line-height: 1.35; }
+  .add { padding: 8px 12px; font-size: 0.85rem; min-height: 40px; }
+  .added { font-size: 0.82rem; }
+
+  /* oceny */
+  .avg-head { align-items: center; }
+  .avg-head h3 { font-size: 1.05rem; }
+  .avg-head .big { font-size: 2rem; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0 6px; }
+  .seg button { min-height: 40px; padding: 6px 4px; font-size: 0.85rem; }
+  .gc { font-size: 0.9rem; min-width: 32px; padding: 3px 8px; border-radius: 9px; }
+  .avgpill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .avgpill.g5 { background: var(--ok-soft); color: var(--ok); }
+  .avgpill.g4 { background: var(--g4-soft); color: var(--g4); }
+  .avgpill.g3 { background: var(--warn-soft); color: var(--warn); }
+  .avgpill.g2 { background: var(--err-soft); color: var(--err); }
+  .avgpill.g0 { background: var(--line); color: var(--muted); }
+  .sub-hd { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 2px; }
+  ul.rows.newg li { padding: 8px 0; }
+  details.subj > summary { display: grid; grid-template-columns: 1fr auto 16px; grid-template-areas: "name avg chev" "chips chips chips"; column-gap: 10px; row-gap: 8px; align-items: center; padding: 12px 0; }
+  details.subj .sn { grid-area: name; font-size: 0.98rem; }
+  details.subj .sa { grid-area: avg; min-width: 0; }
+  details.subj .sg { grid-area: chips; max-width: none; justify-content: flex-start; gap: 6px; }
+  details.subj > summary::after { content: "›"; grid-area: chev; color: var(--muted); font-size: 1.4rem; line-height: 1; transform: rotate(90deg); justify-self: center; }
+  details.subj[open] > summary::after { transform: rotate(-90deg); }
+
+  /* kafel dziecka na pulpicie */
+  .tile { padding: 12px 14px; }
+  .tile-grades { display: block; margin-top: 10px; }
+  .tile-grades .avgbadge { display: inline-block; margin-bottom: 4px; }
+  .tg-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 0.92rem; }
+  .tg-row .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tg-row .d { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
+  .counts { gap: 12px; flex-wrap: wrap; }
+
+  .sa { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .ta { display: inline-block; width: 14px; text-align: center; }
+  .od { color: var(--err); font-weight: 700; }
+  ul.rows.newg .gc, .tg-row .gc { min-width: 40px; text-align: center; }
+  .tg-row .d { min-width: 74px; text-align: right; }
+
+  /* dolny pasek: etykiety w jednej linii */
+  nav button { font-size: 0.66rem; white-space: nowrap; letter-spacing: -0.01em; }
+  nav button[aria-current="page"] { font-weight: 600; }
+
+  /* plan lekcji */
+  details.plan summary { padding: 12px 0; }
 </style>
 </head>
 <body>
@@ -396,10 +458,10 @@
     const canAdd = isoDate.test(ev.date || "");
     return `<li>
       <div class="main">
-        <b>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${esc(ev.title)}</b>
-        <small>${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${ev.sourceNote ? " · " + esc(ev.sourceNote) : ""}</small>
+        <b>${esc(ev.title)}</b>
+        <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${ev.sourceNote ? " · " + esc(ev.sourceNote) : ""}</small>
       </div>
-      ${added ? `<span class="added">✓ W kalendarzu</span>` : canAdd ? `<button class="add" data-add="${id}">Dodaj do kalendarza</button>` : ""}
+      ${added ? `<span class="added">✓ Dodano</span>` : canAdd ? `<button class="add" data-add="${id}">📅 Dodaj</button>` : ""}
     </li>`;
   }
 
@@ -495,7 +557,7 @@
       </div>
       <div class="cal-grid">${cells}</div>
       <div class="legend">${kids.map((k) => `<span class="c${k.idx}"><i class="dot-c"></i>${esc(k.name)}</span>`).join("")}</div>
-      <h2 class="sec" style="text-transform:capitalize">${esc(dayTitle)}</h2>
+      <h2 class="sec cap1">${esc(dayTitle)}</h2>
       <div class="card">${list.length ? `<ul class="rows">${list.map((x) => (x.todo ? todoRow(x.todo, false, false) : eventRow(x.ev, x.k, true))).join("")}</ul>` : `<p class="empty">Brak terminów tego dnia.</p>`}</div>`;
   }
 
@@ -574,6 +636,12 @@
     return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${grid}<polyline class="line" points="${pts}"/>${dots}<text class="val" x="${Math.min(lastX, W - 18)}" y="${Math.max(lastY - 9, 11)}" text-anchor="middle">${fmtAvg(vals[vals.length - 1])}</text>${xl}</svg>`;
   }
 
+  const relDay = (iso) => {
+    if (!iso) return "";
+    const t = todayISO();
+    return iso === t ? "dziś" : iso === shiftISO(t, -1) ? "wczoraj" : fmtDate(iso);
+  };
+
   function gradesSection(c) {
     if (!c.extra?.gradeList) return "";
     const all = gradesOf(c);
@@ -589,23 +657,31 @@
     const subjects = [...bySubject(scoped).entries()].sort((a, b) => a[0].localeCompare(b[0], "pl")).map(([name, list]) => {
       const avg = wavg(list);
       const before = wavg(list.filter((g) => g.date && g.date <= shiftISO(today, -30)));
-      const chips = list.slice(-8).map((g) => gradeChip(g, g.date && g.date >= shiftISO(today, -7) && !g.final ? "new" : "")).join("");
+      const shown = list.slice(-10);
+      const chips = (list.length > shown.length ? `<span class="sub">+${list.length - shown.length}</span>` : "") +
+        shown.map((g) => gradeChip(g, g.date && g.date >= shiftISO(today, -7) && !g.final ? "new" : "")).join("");
       const rows = list.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((g) => `<li>
         ${gradeChip(g)}<div class="main"><b>${esc(g.category || (g.final ? "Ocena końcowa" : "Ocena"))}</b>
         <small>${fmtDate(g.date)}${g.weight ? ` · waga ${g.weight}` : ""}${g.inAvg === false ? " · nie liczy się do średniej" : ""}${g.teacher ? " · " + esc(g.teacher) : ""}${g.comment ? "<br>" + esc(g.comment) : ""}</small></div></li>`).join("");
-      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa">${fmtAvg(avg)} ${trendArrow(avg != null && before != null ? avg - before : null)}</span><span class="sg">${chips}</span></summary><ul class="rows">${rows}</ul></details>`;
+      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa"><span class="avgpill ${avgCls(avg)}">${fmtAvg(avg)}</span><span class="ta">${trendArrow(avg != null && before != null ? avg - before : null)}</span></span><span class="sg">${chips}</span></summary><ul class="rows">${rows}</ul></details>`;
     }).join("");
 
     const seg = [["1", "Semestr I"], ["2", "Semestr II"], ["all", "Cały rok"]]
       .map(([k, l]) => `<button data-gsem="${k}" class="${eff === k ? "on" : ""}" aria-pressed="${eff === k}">${l}</button>`).join("");
-    const deltaHtml = delta == null || Math.abs(delta) < 0.005 ? "" : `<span class="delta ${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${fmtAvg(Math.abs(delta))} w ostatnich 30 dniach</span>`;
+    const deltaHtml = delta == null || Math.abs(delta) < 0.005 ? "" : `<div class="delta ${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${fmtAvg(Math.abs(delta))} w 30 dni</div>`;
+
+    const freshHtml = fresh.length
+      ? `<div class="sub-hd">Nowe oceny · 7 dni</div><ul class="rows newg">${fresh.slice(0, 6).map((g) => `<li>${gradeChip(g)}<div class="main"><b>${esc(g.subject)}</b><small>${esc(relDay(g.date))}${g.category ? " · " + esc(g.category) : ""}</small></div></li>`).join("")}</ul>${fresh.length > 6 ? `<p class="empty">i ${fresh.length - 6} więcej — poniżej przy przedmiotach</p>` : ""}`
+      : "";
 
     return `<div class="card">
-      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia ważona ze średnich przedmiotów</small></div>
+      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia ważona</small></div>
         <div style="text-align:right"><div class="big">${fmtAvg(cur)}</div>${deltaHtml}</div></div>
-      ${fresh.length ? `<div class="newstrip">Nowe (7 dni):${fresh.slice(0, 8).map((g) => `<span>${esc(g.subject.slice(0, 4))}. ${gradeChip(g, "new")}</span>`).join("")}</div>` : ""}
       <div class="seg">${seg}</div>
+      ${freshHtml}
+      <div class="sub-hd">Średnia w czasie</div>
       ${gradeChart(series, `Wykres średniej: ${series.length ? fmtAvg(series[series.length - 1].v) : "brak danych"}`)}
+      <div class="sub-hd">Przedmioty</div>
       ${subjects || `<p class="empty">Brak ocen w wybranym okresie.</p>`}
     </div>`;
   }
@@ -674,8 +750,7 @@
     return `<li>
       <button class="check c${t.k.idx}" data-done="${esc(t.id)}" aria-label="${isDone ? "Cofnij" : "Oznacz jako zrobione"}">${isDone ? "☑" : "☐"}</button>
       <div class="main"><b>${isDone ? `<s>${esc(t.text)}</s>` : esc(t.text)}</b>
-        <small><span class="tag c${t.k.idx}">${esc(t.k.name)}</span>${t.kind === "hw" ? "zadanie domowe" : "WhatsApp"}${t.due ? " · " + fmtDate(t.due) : ""}</small></div>
-      ${overdue ? `<span class="chip neg">po terminie</span>` : ""}
+        <small><span class="tag c${t.k.idx}">${esc(t.k.name)}</span>${overdue ? `<span class="od">po terminie</span> · ` : ""}${t.kind === "hw" ? "zadanie domowe" : "WhatsApp"}${t.due ? " · " + fmtDate(t.due) : ""}</small></div>
     </li>`;
   }
 
@@ -713,7 +788,7 @@
     const body = rows || planHtml || luckyHtml
       ? `${rows ? `<ul class="rows">${rows}</ul>` : `<p class="empty">Brak terminów i zadań.</p>`}${planHtml}${luckyHtml}`
       : `<p class="empty">Nic zaplanowanego.</p>`;
-    return `<h2 class="sec" style="text-transform:capitalize">${esc(label)} · ${esc(longDate(iso))}</h2><div class="card">${body}</div>`;
+    return `<h2 class="sec">${esc(label)} · ${esc(longDate(iso))}</h2><div class="card">${body}</div>`;
   }
 
   function viewTodo(d) {
@@ -752,7 +827,7 @@
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
     const hwBody = hw.map((t) => todoRow(t, done.has(t.id), !done.has(t.id) && t.due && t.due < today)).join("");
     const days = arr(c.extra.timetable).filter((x) => x.date >= today).slice(0, 3);
-    const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary style="text-transform:capitalize">${esc(longDate(x.date))} · ${x.lessons.length} lekcji</summary>${lessonsList(x.lessons)}</details>`).join("");
+    const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary class="cap1">${esc(longDate(x.date))} · ${x.lessons.length} lekcji</summary>${lessonsList(x.lessons)}</details>`).join("");
     return `${section("📝", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.")}
       <div class="card"><div class="sect-title"><h3>🎒 Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>`;
   }
@@ -765,10 +840,12 @@
     const scoped = all.filter((g) => inScope(g, "cur"));
     const avg = overallAt(scoped, today);
     const prev = overallAt(scoped, shiftISO(today, -30));
-    const latest = recentGrades(all, 7).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
+    const latest = recentGrades(all, 7).sort((a, b) => b.date.localeCompare(a.date));
+    const rows = latest.slice(0, 3).map((g) => `<div class="tg-row"><span class="n">${esc(g.subject)}</span>${gradeChip(g)}<span class="d">${esc(relDay(g.date))}</span></div>`).join("");
+    const more = latest.length > 3 ? `<div class="tg-row"><span class="d">i ${latest.length - 3} więcej nowych ocen</span></div>` : "";
     return `<div class="tile-grades c${k.idx}">
       ${avg != null ? `<span class="avgbadge">śr. ${fmtAvg(avg)} ${prev != null ? trendArrow(avg - prev) : ""}</span>` : ""}
-      ${latest.map((g) => `<span style="font-size:0.8rem;color:var(--muted)">${esc(g.subject.slice(0, 3))}. ${gradeChip(g, "new")}</span>`).join("")}
+      ${rows}${more}
     </div>`;
   }
 
@@ -976,7 +1053,7 @@
     } catch (e) {
       toast(friendlyError(e), true);
       btn.disabled = false;
-      btn.textContent = "Dodaj do kalendarza";
+      btn.textContent = "📅 Dodaj";
     }
   }
 
