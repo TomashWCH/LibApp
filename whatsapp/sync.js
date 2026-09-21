@@ -34,9 +34,9 @@ import { summarizeGroup } from "./gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETTLE_MS = Number(process.env.WA_SETTLE_MS) || 6000; // cisza po ostatniej wiadomości, zanim uznamy odbiór za zakończony
-const SETTLE_UNRESOLVED_MS = Number(process.env.WA_SETTLE_UNRESOLVED_MS) || 25000; // dłuższe czekanie, gdy są jeszcze nieodszyfrowane wiadomości
+const SETTLE_UNRESOLVED_MS = Number(process.env.WA_SETTLE_UNRESOLVED_MS) || 40000; // dłuższe czekanie, gdy są jeszcze nieodszyfrowane wiadomości
 const OPEN_FALLBACK_MS = Number(process.env.WA_OPEN_FALLBACK_MS) || 25000; // gdyby WhatsApp nie zgłosił końca odbioru zaległych
-const MAX_WAIT_MS = Number(process.env.WA_MAX_WAIT_MS) || 75000; // twardy limit na połączenie i odbiór
+const MAX_WAIT_MS = Number(process.env.WA_MAX_WAIT_MS) || 100000; // twardy limit na połączenie i odbiór
 const TZ = "Europe/Warsaw";
 
 function fail(message) {
@@ -84,6 +84,7 @@ async function connectAndCollect(auth, version, logger) {
   const byJid = new Map(); // jid grupy -> [{ id, ts, from, text }] (tylko w pamięci)
   const stats = new Map(); // jid grupy -> { seen, text } (same liczby, do diagnostyki)
   const cipherIds = new Set(); // id wiadomości, których nie udało się (jeszcze) odszyfrować
+  const cipherByJid = new Map(); // jid grupy -> Set id nieodszyfrowanych wiadomości
   const okIds = new Set(); // id wiadomości odczytanych poprawnie
   const bump = (jid, key) => {
     if (!stats.has(jid)) stats.set(jid, { seen: 0, text: 0 });
@@ -107,7 +108,8 @@ async function connectAndCollect(auth, version, logger) {
       clearTimeout(settleTimer);
       clearTimeout(openTimer);
       clearTimeout(hardTimer);
-      resolve({ sock, byJid, stats, unresolved: unresolved() });
+      const cipher = new Map([...cipherByJid].map(([jid, ids]) => [jid, [...ids].filter((id) => !okIds.has(id)).length]));
+      resolve({ sock, byJid, stats, cipher, unresolved: unresolved() });
     };
     const abort = (err) => {
       if (settled) return;
@@ -147,7 +149,11 @@ async function connectAndCollect(auth, version, logger) {
           if (!entry) {
             // Wiadomość bez treści: albo nieodszyfrowana (WhatsApp ponowi wysyłkę), albo pomijany typ (reakcja itp.)
             const isCipher = !m.message || m.messageStubType === 2 || m.messageStubType === "CIPHERTEXT";
-            if (isCipher && m.key?.id) cipherIds.add(m.key.id);
+            if (isCipher && m.key?.id) {
+              cipherIds.add(m.key.id);
+              if (!cipherByJid.has(jid)) cipherByJid.set(jid, new Set());
+              cipherByJid.get(jid).add(m.key.id);
+            }
             continue;
           }
           okIds.add(entry.id);
@@ -237,7 +243,7 @@ async function main() {
   const logger = pino({ level: "silent" });
 
   console.log("Łączę z WhatsAppem i odbieram wiadomości...");
-  const { sock, byJid, stats, unresolved } = await connectAndCollect(auth, version, logger);
+  const { sock, byJid, stats, cipher, unresolved } = await connectAndCollect(auth, version, logger);
   const diag = {}; // same liczby: ile wiadomości zobaczono / ile z treścią (bez nazw i treści)
   if (unresolved > 0) console.warn(`Wiadomości nieodszyfrowane po zakończeniu odbioru: ${unresolved}.`);
 
@@ -260,9 +266,10 @@ async function main() {
       }
       const fresh = byJid.get(target.id) || [];
       const st = stats.get(target.id) || { seen: 0, text: 0 };
-      diag[g.child] = { seen: st.seen, text: st.text };
+      const undecrypted = cipher.get(target.id) || 0;
+      diag[g.child] = { seen: st.seen, text: st.text, cipher: undecrypted };
       const merged = mergeMessages(pendingDoc[g.child], fresh);
-      console.log(`[${g.child}] odebrane: ${st.seen}, z treścią: ${st.text}, do streszczenia (z zaległymi): ${merged.length}`);
+      console.log(`[${g.child}] odebrane: ${st.seen}, z treścią: ${st.text}, nieodszyfrowane: ${undecrypted}, do streszczenia (z zaległymi): ${merged.length}`);
       if (merged.length === 0) {
         groupStatus[g.child] = "ok";
         // Nawet bez nowych wiadomości usuwamy przeterminowane zadania z listy.
@@ -311,7 +318,9 @@ async function main() {
     try { sock.end(undefined); } catch {}
   }
 
+  const history = [...(Array.isArray(wa.syncLog) ? wa.syncLog : []), { atMs: Date.now(), stats: diag }].slice(-8);
   await setWhatsapp({
+    syncLog: history,
     sync: {
       status: hadError ? "error" : "ok",
       at: Timestamp.now(),
