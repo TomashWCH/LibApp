@@ -1,15 +1,13 @@
 {
-  "_komentarz": "Każdy wpis to jedna osoba. 'firestoreUid' MUSI się zgadzać z UID użytkownika w Firebase Authentication (widoczny w konsoli Firebase -> Authentication -> Users, po zalogowaniu się do appki). 'secretSuffix' to końcówka nazw sekretów w GitHub Actions, np. LIBRUS_LOGIN_TOMEK i LIBRUS_PASSWORD_TOMEK.",
+  "_komentarz": "Każdy wpis w 'users' to jedno konto Google, które loguje się do appki (rodzic). 'firestoreUid' MUSI się zgadzać z UID tego użytkownika w Firebase Authentication (konsola Firebase -> Authentication -> Users, po zalogowaniu się do appki). W 'children' każde dziecko ma 'name' (etykieta widoczna w appce, możesz ją zmienić) oraz 'secretSuffix' — końcówkę nazw sekretów w GitHub Actions, np. DZIECKO1 => LIBRUS_LOGIN_DZIECKO1 i LIBRUS_PASSWORD_DZIECKO1.",
   "users": [
     {
-      "displayName": "Tomek",
-      "firestoreUid": "WKLEJ_TU_UID_Z_FIREBASE_AUTH_TOMKA",
-      "secretSuffix": "TOMEK"
-    },
-    {
-      "displayName": "Żona",
-      "firestoreUid": "WKLEJ_TU_UID_Z_FIREBASE_AUTH_ZONY",
-      "secretSuffix": "ZONA"
+      "displayName": "Rodzic",
+      "firestoreUid": "WKLEJ_TU_UID_Z_FIREBASE_AUTH",
+      "children": [
+        { "name": "Dziecko 1", "secretSuffix": "DZIECKO1" },
+        { "name": "Dziecko 2", "secretSuffix": "DZIECKO2" }
+      ]
     }
   ]
 }
