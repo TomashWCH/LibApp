@@ -25,7 +25,7 @@ import makeWASocket, {
 import { useFirestoreAuthState } from "./auth-firestore.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PAIRING_TIMEOUT_MS = 4 * 60 * 1000;
+const PAIRING_TIMEOUT_MS = 5 * 60 * 1000;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function fail(message) {
@@ -73,6 +73,7 @@ async function main() {
 
   let sock;
   let codeRequested = false;
+  let codeAt = null; // kiedy wygenerowano kod (do diagnostyki)
 
   const opened = new Promise((resolve, reject) => {
     const start = () => {
@@ -84,6 +85,7 @@ async function main() {
           keys: makeCacheableSignalKeyStore(state.keys, logger),
         },
         browser: Browsers.ubuntu("Chrome"),
+        qrTimeout: 120000, // dłużej niż domyślne 60/20 s — więcej czasu na wpisanie kodu
         printQRInTerminal: false,
         syncFullHistory: false,
         markOnlineOnConnect: false,
@@ -100,6 +102,7 @@ async function main() {
           try {
             const raw = await sock.requestPairingCode(phone);
             const code = String(raw).match(/.{1,4}/g).join("-");
+            codeAt = Date.now();
             await setWhatsapp({
               status: "pairing",
               pairingCode: code,
@@ -122,7 +125,13 @@ async function main() {
           } else if (status === DisconnectReason.loggedOut) {
             reject(new Error("WhatsApp wylogował to urządzenie (401). Uruchom parowanie od nowa."));
           } else {
-            reject(new Error(`Połączenie z WhatsAppem zostało zamknięte (kod ${status ?? "?"}).`));
+            const reason = lastDisconnect?.error?.message;
+            const since = codeAt ? Math.round((Date.now() - codeAt) / 1000) : null;
+            reject(
+              new Error(
+                `Połączenie z WhatsAppem zostało zamknięte (kod ${status ?? "?"}${reason ? `: ${reason}` : ""}${since != null ? `, ${since} s po wygenerowaniu kodu` : ""}).`
+              )
+            );
           }
         }
       });
