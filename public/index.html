@@ -910,6 +910,19 @@
     </div>`;
   }
 
+  // Krótka informacja, co się działo z grupą podczas ostatniego połączenia (bez zaglądania w logi).
+  function waStatLine(c, d) {
+    const sy = d?.whatsapp?.sync;
+    const st = sy?.stats?.[c.key];
+    if (!sy || !st) return "";
+    const hint = st.seen === 0
+      ? "Z tej grupy nic nowego nie przyszło od poprzedniego połączenia."
+      : st.text === 0
+        ? `Wiadomości przyszły (${st.seen}), ale nie udało się ich odczytać. WhatsApp zwykle ponawia je przy kolejnej wiadomości w grupie.`
+        : `Odebrano wiadomości z treścią: ${st.text}.`;
+    return `<p class="empty" style="margin-top:8px">Ostatnie połączenie: ${esc(fmtStamp(sy.at))}. ${hint}</p>`;
+  }
+
   function whatsappSection(c, d) {
     const title = `<h3>💬 WhatsApp${c.wa?.groupName ? ` <span class="sub">· ${esc(c.wa.groupName)}</span>` : ""}</h3>`;
     if (!c.wa) {
@@ -918,7 +931,7 @@
         : st === "not_found" ? "Nie znaleziono grupy o nazwie z sekretu WHATSAPP_GROUPS. Porównaj nazwę z listą grup na karcie WhatsApp na pulpicie."
         : st === "error" ? "Nie udało się streścić wiadomości z grupy. Spróbuję przy następnej synchronizacji."
         : "Grupa nie jest jeszcze podłączona albo czeka na pierwszą synchronizację.";
-      return `<div class="card"><div class="sect-title">${title}</div><p class="empty">${text}</p></div>`;
+      return `<div class="card"><div class="sect-title">${title}</div><p class="empty">${text}</p>${waStatLine(c, d)}</div>`;
     }
     const entries = waRecent(c, 48).sort((a, b) => b.atMs - a.atMs);
     const dayName = (ms) => {
@@ -937,7 +950,7 @@
       </div>`;
     }).join("");
     return `<div class="card"><div class="sect-title">${title}${entries.length ? `<span class="badge">${entries.length}</span>` : ""}</div>
-      ${entries.length ? body : `<p class="empty">Brak nowych wiadomości w grupie z ostatnich 48 godzin.</p>`}</div>`;
+      ${entries.length ? body : `<p class="empty">Brak nowych wiadomości w grupie z ostatnich 48 godzin.</p>`}${waStatLine(c, d)}</div>`;
   }
 
   function viewChild(d, key) {
