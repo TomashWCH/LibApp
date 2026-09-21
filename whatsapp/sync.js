@@ -33,8 +33,10 @@ import { normName, toEntry, mergeMessages, pruneEntries } from "./lib.js";
 import { summarizeGroup } from "./gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SETTLE_MS = 6000; // cisza po ostatniej wiadomości, zanim uznamy odbiór za zakończony
-const MAX_WAIT_MS = 75000; // twardy limit na połączenie i odbiór
+const SETTLE_MS = Number(process.env.WA_SETTLE_MS) || 6000; // cisza po ostatniej wiadomości, zanim uznamy odbiór za zakończony
+const SETTLE_UNRESOLVED_MS = Number(process.env.WA_SETTLE_UNRESOLVED_MS) || 25000; // dłuższe czekanie, gdy są jeszcze nieodszyfrowane wiadomości
+const OPEN_FALLBACK_MS = Number(process.env.WA_OPEN_FALLBACK_MS) || 25000; // gdyby WhatsApp nie zgłosił końca odbioru zaległych
+const MAX_WAIT_MS = Number(process.env.WA_MAX_WAIT_MS) || 75000; // twardy limit na połączenie i odbiór
 const TZ = "Europe/Warsaw";
 
 function fail(message) {
@@ -80,6 +82,15 @@ const childName = (suffix) => owner.children?.find((c) => c.secretSuffix === suf
 // ---------- Połączenie i odbiór wiadomości ----------
 async function connectAndCollect(auth, version, logger) {
   const byJid = new Map(); // jid grupy -> [{ id, ts, from, text }] (tylko w pamięci)
+  const stats = new Map(); // jid grupy -> { seen, text } (same liczby, do diagnostyki)
+  const cipherIds = new Set(); // id wiadomości, których nie udało się (jeszcze) odszyfrować
+  const okIds = new Set(); // id wiadomości odczytanych poprawnie
+  const bump = (jid, key) => {
+    if (!stats.has(jid)) stats.set(jid, { seen: 0, text: 0 });
+    stats.get(jid)[key]++;
+  };
+  const unresolved = () => [...cipherIds].filter((id) => !okIds.has(id)).length;
+  const settleDelay = () => (unresolved() > 0 ? SETTLE_UNRESOLVED_MS : SETTLE_MS);
 
   return new Promise((resolve, reject) => {
     let sock;
@@ -88,18 +99,21 @@ async function connectAndCollect(auth, version, logger) {
     let restarts = 0;
     let settleTimer = null;
     let pendingDone = false;
+    let openTimer = null;
 
     const finish = () => {
       if (settled) return;
       settled = true;
       clearTimeout(settleTimer);
+      clearTimeout(openTimer);
       clearTimeout(hardTimer);
-      resolve({ sock, byJid });
+      resolve({ sock, byJid, stats, unresolved: unresolved() });
     };
     const abort = (err) => {
       if (settled) return;
       settled = true;
       clearTimeout(settleTimer);
+      clearTimeout(openTimer);
       clearTimeout(hardTimer);
       try { sock?.end(undefined); } catch {}
       reject(err);
@@ -128,23 +142,40 @@ async function connectAndCollect(auth, version, logger) {
         for (const m of messages) {
           const jid = m.key?.remoteJid;
           if (!jid || !isJidGroup(jid)) continue;
+          bump(jid, "seen");
           const entry = toEntry(m);
-          if (!entry) continue;
+          if (!entry) {
+            // Wiadomość bez treści: albo nieodszyfrowana (WhatsApp ponowi wysyłkę), albo pomijany typ (reakcja itp.)
+            const isCipher = !m.message || m.messageStubType === 2 || m.messageStubType === "CIPHERTEXT";
+            if (isCipher && m.key?.id) cipherIds.add(m.key.id);
+            continue;
+          }
+          okIds.add(entry.id);
+          bump(jid, "text");
           if (!byJid.has(jid)) byJid.set(jid, []);
           byJid.get(jid).push(entry);
         }
         if (pendingDone && !settled) {
           clearTimeout(settleTimer);
-          settleTimer = setTimeout(finish, SETTLE_MS);
+          settleTimer = setTimeout(finish, settleDelay());
         }
       });
 
       sock.ev.on("connection.update", (update) => {
         const { connection, lastDisconnect, receivedPendingNotifications } = update;
-        if (connection === "open") opened = true;
+        if (connection === "open") {
+          opened = true;
+          // Gdyby WhatsApp nie zgłosił końca odbioru zaległych wiadomości, nie czekamy w nieskończoność.
+          openTimer = setTimeout(() => {
+            if (!pendingDone && !settled) {
+              pendingDone = true;
+              settleTimer = setTimeout(finish, settleDelay());
+            }
+          }, OPEN_FALLBACK_MS);
+        }
         if (receivedPendingNotifications && !pendingDone) {
           pendingDone = true;
-          settleTimer = setTimeout(finish, SETTLE_MS);
+          settleTimer = setTimeout(finish, settleDelay());
         }
         if (connection === "close" && !settled) {
           const status = lastDisconnect?.error?.output?.statusCode;
@@ -205,7 +236,9 @@ async function main() {
   const logger = pino({ level: "silent" });
 
   console.log("Łączę z WhatsAppem i odbieram wiadomości...");
-  const { sock, byJid } = await connectAndCollect(auth, version, logger);
+  const { sock, byJid, stats, unresolved } = await connectAndCollect(auth, version, logger);
+  const diag = {}; // same liczby: ile wiadomości zobaczono / ile z treścią (bez nazw i treści)
+  if (unresolved > 0) console.warn(`Wiadomości nieodszyfrowane po zakończeniu odbioru: ${unresolved}.`);
 
   const groupStatus = {};
   let hadError = false;
@@ -225,8 +258,10 @@ async function main() {
         continue;
       }
       const fresh = byJid.get(target.id) || [];
+      const st = stats.get(target.id) || { seen: 0, text: 0 };
+      diag[g.child] = { seen: st.seen, text: st.text };
       const merged = mergeMessages(pendingDoc[g.child], fresh);
-      console.log(`[${g.child}] nowych wiadomości: ${fresh.length}, do streszczenia: ${merged.length}`);
+      console.log(`[${g.child}] odebrane: ${st.seen}, z treścią: ${st.text}, do streszczenia (z zaległymi): ${merged.length}`);
       if (merged.length === 0) {
         groupStatus[g.child] = "ok";
         continue;
@@ -273,6 +308,8 @@ async function main() {
       at: Timestamp.now(),
       startedAt,
       groups: groupStatus,
+      stats: diag,
+      unresolved,
       error: hadError
         ? Object.entries(groupStatus)
             .filter(([, s]) => s !== "ok")
