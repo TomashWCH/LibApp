@@ -300,6 +300,7 @@
   nav button { font-size: 0.66rem; white-space: nowrap; letter-spacing: -0.01em; }
   nav button[aria-current="page"] { font-weight: 600; }
 
+  .seg.two { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
   .calc { font-size: 0.8rem; color: var(--muted); margin: 0 0 6px; overflow-wrap: anywhere; }
 
   /* plan lekcji */
@@ -573,7 +574,11 @@
   const gradesOf = (c) => arr(c.extra?.gradeList);
   const inScope = (g, sem) => sem === "all" || g.sem === 0 || g.sem === (sem === "cur" ? curSem() : Number(sem));
   // Do średniej liczą się oceny z cyfrą (także 4+ i 3-). Samo "+" lub "-" (bez cyfry), "np", "bz" i "nb" nie mają wartości liczbowej, więc się nie liczą.
-  const countable = (g) => !g.final && g.inAvg !== false && g.num != null;
+  // Tryb liczenia: "librus" = tylko oceny, które nauczyciel oznaczył jako liczone do średniej; "all" = wszystkie oceny z cyfrą.
+  let avgMode = "librus";
+  try { avgMode = localStorage.getItem("libapp_avgmode") === "all" ? "all" : "librus"; } catch {}
+  const countable = (g) => !g.final && g.num != null && (avgMode === "all" || g.inAvg !== false);
+  const plOcen = (n) => `${n} ${n === 1 ? "ocena" : n >= 2 && n <= 4 ? "oceny" : "ocen"}`;
   const fmtAvg = (v) => (v == null ? "–" : v.toFixed(2).replace(".", ","));
   const gcls = (g) => (g.base >= 5 ? "g5" : g.base === 4 ? "g4" : g.base === 3 ? "g3" : g.base ? "g2" : "g0");
   const avgCls = (v) => (v == null ? "g0" : v >= 4.75 ? "g5" : v >= 3.75 ? "g4" : v >= 2.75 ? "g3" : "g2");
@@ -679,14 +684,22 @@
       .map(([k, l]) => `<button data-gsem="${k}" class="${eff === k ? "on" : ""}" aria-pressed="${eff === k}">${l}</button>`).join("");
     const deltaHtml = delta == null || Math.abs(delta) < 0.005 ? "" : `<div class="delta ${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${fmtAvg(Math.abs(delta))} w 30 dni</div>`;
 
+    // ile ocen z cyfrą nauczyciele wyłączyli ze średniej (w bieżącym zakresie)
+    const excluded = scoped.filter((g) => !g.final && g.num != null && g.inAvg === false).length;
+    const avgNote = avgMode === "librus"
+      ? (excluded ? `<p class="empty" style="margin:2px 0 4px">${plOcen(excluded)} ${excluded === 1 ? "nie liczy się" : "nie liczą się"} do średniej (tak ustawili nauczyciele w Librusie). „Wszystkie oceny" pokaże średnią orientacyjną.</p>` : "")
+      : `<p class="empty" style="margin:2px 0 4px">Średnia orientacyjna: liczą się też oceny, które nauczyciele wyłączyli ze średniej w Librusie.</p>`;
+
     const freshHtml = fresh.length
       ? `<div class="sub-hd">Nowe oceny · 7 dni</div><ul class="rows newg">${fresh.slice(0, 6).map((g) => `<li>${gradeChip(g)}<div class="main"><b>${esc(g.subject)}</b><small>${esc(relDay(g.date))}${g.category ? " · " + esc(g.category) : ""}</small></div></li>`).join("")}</ul>${fresh.length > 6 ? `<p class="empty">i ${fresh.length - 6} więcej — poniżej przy przedmiotach</p>` : ""}`
       : "";
 
     return `<div class="card">
-      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia z ${[...bySubject(scoped.filter((g) => g.date && g.date <= today)).values()].filter((l) => wavg(l) != null).length} przedmiotów</small></div>
+      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia z ${(() => { const n = [...bySubject(scoped.filter((g) => g.date && g.date <= today)).values()].filter((l) => wavg(l) != null).length; return `${n} ${n === 1 ? "przedmiotu" : "przedmiotów"}`; })()}</small></div>
         <div style="text-align:right"><div class="big">${fmtAvg(cur)}</div>${deltaHtml}</div></div>
       <div class="seg">${seg}</div>
+      <div class="seg two">${[["librus", "Jak w Librusie"], ["all", "Wszystkie oceny"]].map(([k, l]) => `<button data-avg="${k}" class="${avgMode === k ? "on" : ""}" aria-pressed="${avgMode === k}">${l}</button>`).join("")}</div>
+      ${avgNote}
       ${freshHtml}
       <div class="sub-hd">Średnia w czasie</div>
       ${gradeChart(series, `Wykres średniej: ${series.length ? fmtAvg(series[series.length - 1].v) : "brak danych"}`)}
@@ -853,7 +866,7 @@
     const rows = latest.slice(0, 3).map((g) => `<div class="tg-row"><span class="n">${esc(g.subject)}</span>${gradeChip(g)}<span class="d">${esc(relDay(g.date))}</span></div>`).join("");
     const more = latest.length > 3 ? `<div class="tg-row"><span class="d">i ${latest.length - 3} więcej nowych ocen</span></div>` : "";
     return `<div class="tile-grades c${k.idx}">
-      ${avg != null ? `<span class="avgbadge">śr. ${fmtAvg(avg)} ${prev != null ? trendArrow(avg - prev) : ""}</span>` : ""}
+      ${avg != null ? `<span class="avgbadge">śr. ${fmtAvg(avg)} ${prev != null ? trendArrow(avg - prev) : ""}<span style="font-weight:400"> · z ${plOcen(scoped.filter((g) => g.date && countable(g)).length)}</span></span>` : `<span class="avgbadge">brak ocen w średniej</span>`}
       ${rows}${more}
     </div>`;
   }
@@ -1070,6 +1083,13 @@
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    const am = e.target.closest("[data-avg]");
+    if (am) {
+      avgMode = am.dataset.avg === "all" ? "all" : "librus";
+      try { localStorage.setItem("libapp_avgmode", avgMode); } catch {}
+      render();
+      return;
+    }
     const gs = e.target.closest("[data-gsem]");
     if (gs) { state.gradeSem = gs.dataset.gsem; render(); return; }
     const dn = e.target.closest("[data-done]");
