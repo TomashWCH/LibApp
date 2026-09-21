@@ -162,6 +162,18 @@
   .wa-list.todo li::before { content: "☐ "; color: var(--ch, var(--accent)); }
   .wa-h { font-size: 0.78rem; font-weight: 700; color: var(--muted); margin-top: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
   .sub { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
+  /* dziś / jutro, zadania, plan lekcji */
+  .check { background: none; border: 0; font-size: 1.5rem; line-height: 1; cursor: pointer; color: var(--ch, var(--accent)); padding: 4px; min-width: 40px; min-height: 40px; flex: none; }
+  ul.rows li s { color: var(--muted); }
+  details.plan { border-top: 1px solid var(--line); }
+  details.plan:first-of-type { border-top: 0; }
+  details.plan summary { cursor: pointer; padding: 10px 0; font-weight: 600; font-size: 0.92rem; }
+  ul.lessons { list-style: none; margin: 0 0 8px; padding: 0; }
+  ul.lessons li { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 0.92rem; }
+  ul.lessons .nr { width: 24px; height: 24px; border-radius: 50%; background: var(--line); color: var(--muted); font-size: 0.75rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  ul.lessons .flag { color: var(--warn); font-weight: 600; }
+  .lucky { margin-top: 10px; font-size: 0.9rem; color: var(--muted); }
+  .nb { position: absolute; top: 2px; left: calc(50% + 6px); background: var(--err); color: #fff; font-size: 0.65rem; font-weight: 700; border-radius: 999px; min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; }
   .pair-code { font-size: 2rem; font-weight: 700; letter-spacing: 0.14em; text-align: center; font-variant-numeric: tabular-nums; padding: 14px 8px; margin: 10px 0; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line); user-select: all; }
   .wa-groups { margin: 8px 0 0; padding: 0; list-style: none; font-size: 0.9rem; color: var(--muted); }
   .wa-groups li { padding: 2px 0; }
@@ -174,9 +186,9 @@
   }
   .nav-inner { display: flex; width: 100%; max-width: 640px; }
   nav button {
-    flex: 1; background: transparent; border: 0; padding: 8px 4px 10px; cursor: pointer;
+    position: relative; flex: 1; min-width: 0; background: transparent; border: 0; padding: 8px 2px 10px; cursor: pointer;
     display: flex; flex-direction: column; align-items: center; gap: 3px;
-    font-size: 0.75rem; color: var(--muted);
+    font-size: 0.7rem; color: var(--muted);
   }
   nav button[aria-current="page"] { color: var(--ink); font-weight: 700; }
   nav .ico { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem; background: transparent; }
@@ -405,6 +417,14 @@
       }
     }
 
+    // zadania (WhatsApp i zadania domowe) z terminem też trafiają do kalendarza
+    const doneSet = loadDone();
+    for (const t of todoItems(d)) {
+      if (!t.due || doneSet.has(t.id)) continue;
+      if (!byDay.has(t.due)) byDay.set(t.due, []);
+      byDay.get(t.due).push({ todo: t, k: t.k });
+    }
+
     const { y, m } = state.cal;
     const first = new Date(y, m, 1);
     const offset = (first.getDay() + 6) % 7; // poniedziałek = 0
@@ -424,7 +444,8 @@
       cells += `<button class="${cls}" data-day="${iso}" aria-label="${esc(label)}">${dt.getDate()}<span class="dots">${idxs.map((ix) => `<i class="dot-c c${ix}"></i>`).join("")}</span></button>`;
     }
 
-    const list = (byDay.get(state.calDay) || []).slice().sort((a, b) => (a.ev.time || "").localeCompare(b.ev.time || ""));
+    const timeOf = (x) => (x.ev ? x.ev.time || "" : "99:99");
+    const list = (byDay.get(state.calDay) || []).slice().sort((a, b) => timeOf(a).localeCompare(timeOf(b)));
     const [sy, sm, sd] = state.calDay.split("-").map(Number);
     const dayTitle = new Date(sy, sm - 1, sd).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 
@@ -439,7 +460,135 @@
       <div class="cal-grid">${cells}</div>
       <div class="legend">${kids.map((k) => `<span class="c${k.idx}"><i class="dot-c"></i>${esc(k.name)}</span>`).join("")}</div>
       <h2 class="sec" style="text-transform:capitalize">${esc(dayTitle)}</h2>
-      <div class="card">${list.length ? `<ul class="rows">${list.map(({ ev, k }) => eventRow(ev, k, true)).join("")}</ul>` : `<p class="empty">Brak terminów tego dnia.</p>`}</div>`;
+      <div class="card">${list.length ? `<ul class="rows">${list.map((x) => (x.todo ? todoRow(x.todo, false, false) : eventRow(x.ev, x.k, true))).join("")}</ul>` : `<p class="empty">Brak terminów tego dnia.</p>`}</div>`;
+  }
+
+  // ---------- zadania, plan lekcji, "Dziś i jutro" ----------
+  const shiftISO = (iso, n) => {
+    const [y, m, dd] = iso.split("-").map(Number);
+    const t = new Date(y, m - 1, dd + n);
+    return `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}`;
+  };
+  const longDate = (iso) => {
+    const [y, m, dd] = iso.split("-").map(Number);
+    return new Date(y, m - 1, dd).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
+  };
+  function loadDone() {
+    try { return new Set(JSON.parse(localStorage.getItem("libapp_done") || "[]")); } catch { return new Set(); }
+  }
+  function saveDone(set) {
+    try { localStorage.setItem("libapp_done", JSON.stringify([...set].slice(-400))); } catch {}
+  }
+
+  // Wszystko "do zrobienia": zadania wykryte w grupach WhatsApp + zadania domowe z Librusa.
+  function todoItems(d) {
+    const items = [];
+    for (const k of getChildren(d)) {
+      const saved = d?.whatsapp?.todos?.[k.key];
+      const fromWa = Array.isArray(saved)
+        ? saved
+        : waRecent(k, 72).flatMap((e) => arr(e.todo)).map((t) => ({
+            id: "t" + cyrb53(`${t.text}|${t.due || ""}`).toString(32), text: t.text, due: isoDate.test(t.due || "") ? t.due : null,
+          }));
+      for (const t of fromWa) items.push({ id: `${k.key}:${t.id}`, kind: "wa", text: t.text, due: t.due || null, k });
+      for (const h of arr(k.extra?.homework)) {
+        items.push({
+          id: `${k.key}:hw:${cyrb53(`${h.subject}|${h.title}|${h.to}`).toString(32)}`,
+          kind: "hw",
+          text: `${h.subject ? h.subject + ": " : ""}${h.title}`,
+          due: isoDate.test(h.to || "") ? h.to : null,
+          k,
+        });
+      }
+    }
+    return items;
+  }
+
+  function todoRow(t, isDone, overdue) {
+    return `<li>
+      <button class="check c${t.k.idx}" data-done="${esc(t.id)}" aria-label="${isDone ? "Cofnij" : "Oznacz jako zrobione"}">${isDone ? "☑" : "☐"}</button>
+      <div class="main"><b>${isDone ? `<s>${esc(t.text)}</s>` : esc(t.text)}</b>
+        <small><span class="tag c${t.k.idx}">${esc(t.k.name)}</span>${t.kind === "hw" ? "zadanie domowe" : "WhatsApp"}${t.due ? " · " + fmtDate(t.due) : ""}</small></div>
+      ${overdue ? `<span class="chip neg">po terminie</span>` : ""}
+    </li>`;
+  }
+
+  function lessonsList(lessons) {
+    return `<ul class="lessons">${lessons.map((l) => `<li><span class="nr">${esc(l.nr)}</span>
+      <div class="main"><b>${esc(l.title)}</b><small>${esc(l.time)}${l.flag ? `${l.time ? " · " : ""}<span class="flag">${esc(l.flag)}</span>` : ""}</small></div></li>`).join("")}</ul>`;
+  }
+
+  function dayCard(d, iso, label) {
+    const kids = getChildren(d);
+    const done = loadDone();
+    const today = todayISO();
+    const items = todoItems(d).filter((t) => !done.has(t.id));
+    const overdue = iso === today ? items.filter((t) => t.due && t.due < iso) : [];
+    const todos = items.filter((t) => t.due === iso);
+    const events = kids
+      .flatMap((k) => allEvents(k).filter((e) => e.date === iso).map((ev) => ({ ev, k })))
+      .sort((a, b) => (a.ev.time || "").localeCompare(b.ev.time || ""));
+    const plans = kids
+      .map((k) => ({ k, lessons: arr(k.extra?.timetable).find((x) => x.date === iso)?.lessons || [] }))
+      .filter((p) => p.lessons.length);
+    const lucky = iso === today ? kids.filter((k) => k.extra?.luckyNumber != null) : [];
+
+    const rows = [
+      ...overdue.map((t) => todoRow(t, false, true)),
+      ...events.map(({ ev, k }) => eventRow(ev, k, true)),
+      ...todos.map((t) => todoRow(t, false, false)),
+    ].join("");
+    const planHtml = plans.map(({ k, lessons }) => {
+      const first = lessons[0]?.time?.split("-")[0], last = lessons[lessons.length - 1]?.time?.split("-")[1];
+      return `<details class="plan c${k.idx}"><summary><span class="tag c${k.idx}">${esc(k.name)}</span>Plan lekcji · ${lessons.length}${first && last ? ` · ${esc(first)}–${esc(last)}` : ""}</summary>${lessonsList(lessons)}</details>`;
+    }).join("");
+    const luckyHtml = lucky.length ? `<p class="lucky">🍀 Szczęśliwy numerek: ${lucky.map((k) => `${esc(k.name)} ${esc(k.extra.luckyNumber)}`).join(", ")}</p>` : "";
+
+    const body = rows || planHtml || luckyHtml
+      ? `${rows ? `<ul class="rows">${rows}</ul>` : `<p class="empty">Brak terminów i zadań.</p>`}${planHtml}${luckyHtml}`
+      : `<p class="empty">Nic zaplanowanego.</p>`;
+    return `<h2 class="sec" style="text-transform:capitalize">${esc(label)} · ${esc(longDate(iso))}</h2><div class="card">${body}</div>`;
+  }
+
+  function viewTodo(d) {
+    const kids = getChildren(d);
+    if (kids.length === 0) return `<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>`;
+    const done = loadDone();
+    const today = todayISO(), tomorrow = shiftISO(today, 1), weekEnd = shiftISO(today, 7);
+    const all = todoItems(d).sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999") || a.k.idx - b.k.idx);
+    const open = all.filter((t) => !done.has(t.id));
+    const closed = all.filter((t) => done.has(t.id));
+    const groups = [
+      ["Po terminie", open.filter((t) => t.due && t.due < today), true],
+      ["Dziś", open.filter((t) => t.due === today), false],
+      ["Jutro", open.filter((t) => t.due === tomorrow), false],
+      ["W tym tygodniu", open.filter((t) => t.due && t.due > tomorrow && t.due <= weekEnd), false],
+      ["Później", open.filter((t) => t.due && t.due > weekEnd), false],
+      ["Bez terminu", open.filter((t) => !t.due), false],
+    ].filter(([, list]) => list.length);
+
+    const html = groups.map(([title, list, over]) => `<h2 class="sec">${title} · ${list.length}</h2>
+      <div class="card"><ul class="rows">${list.map((t) => todoRow(t, false, over)).join("")}</ul></div>`).join("");
+    const closedHtml = closed.length
+      ? `<details class="card plan"><summary>Zrobione · ${closed.length}</summary><ul class="rows">${closed.map((t) => todoRow(t, true, false)).join("")}</ul></details>`
+      : "";
+    return `${html || `<div class="card"><p class="empty">Nic do zrobienia. Zadania z grup WhatsApp i zadania domowe z Librusa pojawią się tutaj.</p></div>`}${closedHtml}
+      <p class="empty" style="margin-top:12px">Odhaczone zadania zapamiętuje ta przeglądarka na tym urządzeniu.</p>`;
+  }
+
+  // Zadania domowe i plan lekcji w widoku dziecka.
+  function extraSections(c, d) {
+    if (!c.extra) return "";
+    const done = loadDone();
+    const today = todayISO();
+    const hw = todoItems(d)
+      .filter((t) => t.kind === "hw" && t.k.key === c.key)
+      .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
+    const hwBody = hw.map((t) => todoRow(t, done.has(t.id), !done.has(t.id) && t.due && t.due < today)).join("");
+    const days = arr(c.extra.timetable).filter((x) => x.date >= today).slice(0, 3);
+    const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary style="text-transform:capitalize">${esc(longDate(x.date))} · ${x.lessons.length} lekcji</summary>${lessonsList(x.lessons)}</details>`).join("");
+    return `${section("📝", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.")}
+      <div class="card"><div class="sect-title"><h3>🎒 Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>`;
   }
 
   function viewPulpit(d) {
@@ -451,6 +600,7 @@
     const total = (f) => all.reduce((n, x) => n + f(x.s), 0);
     const events = all
       .flatMap(({ k, s }) => s.events.map((ev) => ({ ev, k })))
+      .filter(({ ev }) => ev.date > shiftISO(todayISO(), 1))
       .sort((a, b) => (a.ev.date + (a.ev.time || "")).localeCompare(b.ev.date + (b.ev.time || "")))
       .slice(0, 8);
 
@@ -470,10 +620,11 @@
       </button>`).join("");
 
     const evCard = events.length
-      ? `<h2 class="sec">Nadchodzące terminy</h2><div class="card"><ul class="rows">${events.map(({ ev, k }) => eventRow(ev, k, true)).join("")}</ul></div>`
+      ? `<h2 class="sec">Dalsze terminy</h2><div class="card"><ul class="rows">${events.map(({ ev, k }) => eventRow(ev, k, true)).join("")}</ul></div>`
       : "";
 
-    return `${stats}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    const today = todayISO();
+    return `${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${stats}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>`;
   }
@@ -539,7 +690,7 @@
 
     return `<div class="c${c.idx}">
       <div class="child-head"><span class="avatar">${esc((c.name || "?").charAt(0).toUpperCase())}</span>
-        <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}</small></div></div>
+        <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}${c.extra?.luckyNumber != null ? ` · 🍀 numerek ${esc(c.extra.luckyNumber)}` : ""}</small></div></div>
       ${c.lastError ? `<div class="warnbox">Ostatnie odświeżenie się nie udało: ${esc(c.lastError)}. Widać dane z poprzedniej synchronizacji.</div>` : ""}
       ${c.summary ? `<div class="card"><p class="sum" style="margin:0">${esc(c.summary)}</p></div>` : ""}
       ${hasSections ? `
@@ -548,6 +699,7 @@
         ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
         ${section("✉️", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
+      ${extraSections(c, d)}
       ${whatsappSection(c, d)}
     </div>`;
   }
@@ -555,13 +707,16 @@
   function render() {
     const d = state.data;
     const kids = getChildren(d);
-    if (state.view !== "pulpit" && state.view !== "kalendarz" && !kids.some((k) => k.key === state.view)) state.view = "pulpit";
+    if (!["pulpit", "kalendarz", "todo"].includes(state.view) && !kids.some((k) => k.key === state.view)) state.view = "pulpit";
     registry.clear();
-    $("#content").innerHTML = state.view === "pulpit" ? viewPulpit(d) : state.view === "kalendarz" ? viewKalendarz(d) : viewChild(d, state.view);
+    $("#content").innerHTML = state.view === "pulpit" ? viewPulpit(d) : state.view === "kalendarz" ? viewKalendarz(d) : state.view === "todo" ? viewTodo(d) : viewChild(d, state.view);
+    const doneNow = loadDone();
+    const dueNow = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due <= todayISO()).length;
 
     $("#nav").innerHTML = `
       <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">🏠</span>Pulpit</button>
       <button data-goto="kalendarz" ${state.view === "kalendarz" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">📅</span>Kalendarz</button>
+      <button data-goto="todo" ${state.view === "todo" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">✅</span>Do zrobienia${dueNow ? `<span class="nb" aria-label="${dueNow} na dziś lub po terminie">${dueNow}</span>` : ""}</button>
       ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${esc((k.name || "?").charAt(0).toUpperCase())}</span>${esc(k.name)}</button>`).join("")}`;
 
     const dot = $("#sync-dot"), text = $("#sync-text");
@@ -654,6 +809,15 @@
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    const dn = e.target.closest("[data-done]");
+    if (dn) {
+      const set = loadDone();
+      const id = dn.dataset.done;
+      if (set.has(id)) set.delete(id); else set.add(id);
+      saveDone(set);
+      render();
+      return;
+    }
     const day = e.target.closest("[data-day]");
     if (day) {
       const [yy, mm, dd] = day.dataset.day.split("-").map(Number);
