@@ -5,8 +5,8 @@
       "displayName": "Rodzic",
       "firestoreUid": "0mlgSYJpp7fSoCdl4BmTSSZId9s2",
       "children": [
-        { "name": "Patryk", "secretSuffix": "DZIECKO1" },
-        { "name": "Zuzanna", "secretSuffix": "DZIECKO2" }
+        { "name": "P", "secretSuffix": "DZIECKO1" },
+        { "name": "Z", "secretSuffix": "DZIECKO2" }
       ]
     }
   ]
