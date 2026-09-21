@@ -1,13 +1,42 @@
 name: Codzienna synchronizacja Librus
 
+# Synchronizacja 2 razy dziennie, o stałej porze czasu polskiego:
+#   rano  ok. 7:07  (okno 6:30–7:30)
+#   po południu ok. 16:37  (okno 16:00–17:00)
+# GitHub liczy harmonogram w UTC, a czas w Polsce zmienia się (zima/lato), dlatego
+# każda pora ma dwa wpisy cron, a zadanie "gate" uruchamia synchronizację tylko
+# wtedy, gdy w Polsce jest właściwa godzina. Drugi wpis danej pory jest pomijany.
 on:
   schedule:
-    # 5:30 UTC = 6:30 lub 7:30 czasu polskiego (zależnie od czasu letniego/zimowego)
-    - cron: "30 5 * * *"
+    - cron: "7 5 * * *"   # 7:07 latem (CEST) / 6:07 zimą — zimą pomijane
+    - cron: "7 6 * * *"   # 8:07 latem — pomijane / 7:07 zimą (CET)
+    - cron: "37 14 * * *" # 16:37 latem (CEST) / 15:37 zimą — zimą pomijane
+    - cron: "37 15 * * *" # 17:37 latem — pomijane / 16:37 zimą (CET)
   workflow_dispatch: {} # pozwala odpalić ręcznie z zakładki "Actions" w GitHubie
 
 jobs:
+  gate:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.check.outputs.run }}
+    steps:
+      - name: Sprawdzenie pory (czas polski)
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          HOUR=$(TZ=Europe/Warsaw date +%H)
+          echo "Czas w Polsce: $(TZ=Europe/Warsaw date +%H:%M)"
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$HOUR" = "07" ] || [ "$HOUR" = "16" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "To nie ta pora — pomijam synchronizację."
+          fi
+
   sync:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Pobranie repozytorium
