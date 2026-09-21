@@ -357,7 +357,7 @@
 
   function syncLine(d) {
     const sy = d?.whatsapp?.sync;
-    const tracked = getChildren(d).filter((k) => k.wa).length;
+    const tracked = sy.groups ? Object.values(sy.groups).filter((v) => v === "ok").length : getChildren(d).filter((k) => k.wa).length;
     if (!sy) return `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Podsumowania grup pojawią się po następnej synchronizacji (wymaga sekretu WHATSAPP_GROUPS).</p>`;
     const when = fmtStamp(sy.at);
     const st = sy.stats ? Object.values(sy.stats).reduce((a, x) => ({ seen: a.seen + (x.seen || 0), text: a.text + (x.text || 0) }), { seen: 0, text: 0 }) : null;
