@@ -29,7 +29,7 @@ import makeWASocket, {
   isJidGroup,
 } from "@whiskeysockets/baileys";
 import { useFirestoreAuthState } from "./auth-firestore.js";
-import { normName, toEntry, mergeMessages, pruneEntries } from "./lib.js";
+import { normName, toEntry, mergeMessages, pruneEntries, mergeTodos } from "./lib.js";
 import { summarizeGroup } from "./gemini.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -231,6 +231,7 @@ async function main() {
   const wa = userData.whatsapp || {};
   const storedGroups = Array.isArray(wa.groups) ? wa.groups : [];
   const summaries = wa.summaries || {};
+  const todosByChild = wa.todos || {};
 
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
   const logger = pino({ level: "silent" });
@@ -264,6 +265,10 @@ async function main() {
       console.log(`[${g.child}] odebrane: ${st.seen}, z treścią: ${st.text}, do streszczenia (z zaległymi): ${merged.length}`);
       if (merged.length === 0) {
         groupStatus[g.child] = "ok";
+        // Nawet bez nowych wiadomości usuwamy przeterminowane zadania z listy.
+        const before = todosByChild[g.child] || [];
+        const after = mergeTodos(before, [], Date.now(), today);
+        if (after.length !== before.length) await setWhatsapp({ todos: { [g.child]: after } });
         continue;
       }
       pendingDoc[g.child] = merged;
@@ -288,7 +293,11 @@ async function main() {
         const entry = { atMs: nowMs, at: Timestamp.now(), messageCount: t.messages.length, ...result };
         const previous = summaries[t.child]?.entries || [];
         const entries = pruneEntries([...previous, entry], nowMs);
-        await setWhatsapp({ summaries: { [t.child]: { groupName: t.target.name, entries } } });
+        const todos = mergeTodos(todosByChild[t.child], result.todo, nowMs, today);
+        await setWhatsapp({
+          summaries: { [t.child]: { groupName: t.target.name, entries } },
+          todos: { [t.child]: todos },
+        });
         await pendingRef.set({ [t.child]: FieldValue.delete() }, { merge: true });
         groupStatus[t.child] = "ok";
       } catch (err) {
