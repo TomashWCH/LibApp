@@ -1,0 +1,14 @@
+{
+  "name": "librus-notify-module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Powiadomienia push (Web Push). Osobny package.json, żeby nie wpływał na synchronizację Librusa i WhatsAppa.",
+  "type": "module",
+  "scripts": {
+    "notify": "node notify.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.1.0",
+    "web-push": "^3.6.7"
+  }
+}
