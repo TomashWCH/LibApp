@@ -1,0 +1,9 @@
+{
+  "name": "Podsumowanie dnia",
+  "short_name": "Podsumowanie",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#111116",
+  "theme_color": "#1a1a2e",
+  "icons": []
+}
