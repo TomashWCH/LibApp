@@ -5,75 +5,161 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 <title>Podsumowanie dnia</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#1a1a2e" />
+<meta name="theme-color" content="#eef2f1" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0e1517" media="(prefers-color-scheme: dark)" />
 <style>
   :root {
-    --bg: #f5f5f7;
+    --bg: #eef2f1;
     --card: #ffffff;
-    --text: #1a1a2e;
-    --muted: #6b7280;
-    --accent: #4f46e5;
-    --ok: #16a34a;
-    --err: #dc2626;
+    --ink: #14232b;
+    --muted: #5c6b72;
+    --line: rgba(20, 35, 43, 0.1);
+    --accent: #0d7c86;
+    --on-accent: #ffffff;
+    --ok: #1f9d55;
+    --err: #d64545;
+    --warn: #b7791f;
+    --warn-soft: #f7e8cc;
+    --err-soft: #f8dcdc;
+    --ok-soft: #d8efe1;
+    --c0: #0d7c86; --c0-soft: #d9eef0;
+    --c1: #8a3a72; --c1-soft: #f2e0ec;
+    --c2: #b26a00; --c2-soft: #f7e8cc;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #111116;
-      --card: #1c1c24;
-      --text: #f0f0f5;
-      --muted: #9ca3af;
+      --bg: #0e1517;
+      --card: #162126;
+      --ink: #eaf1f2;
+      --muted: #97a8ad;
+      --line: rgba(234, 241, 242, 0.12);
+      --accent: #4cc3cf;
+      --on-accent: #06181b;
+      --ok: #4cc98a;
+      --err: #f08080;
+      --warn: #f0b04a;
+      --warn-soft: #3a2c12;
+      --err-soft: #3d1f1f;
+      --ok-soft: #14352a;
+      --c0: #4cc3cf; --c0-soft: #17393d;
+      --c1: #e08fc4; --c1-soft: #3a2133;
+      --c2: #f0b04a; --c2-soft: #3a2c12;
     }
   }
   * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     background: var(--bg);
-    color: var(--text);
+    color: var(--ink);
     padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    line-height: 1.45;
   }
-  header {
-    padding: 20px 16px 8px;
+  h1, h2, h3, p { margin: 0; }
+  button { font: inherit; color: inherit; }
+  .c0 { --ch: var(--c0); --ch-soft: var(--c0-soft); }
+  .c1 { --ch: var(--c1); --ch-soft: var(--c1-soft); }
+  .c2 { --ch: var(--c2); --ch-soft: var(--c2-soft); }
+
+  /* logowanie */
+  #login-screen { text-align: center; padding: 72px 24px; max-width: 420px; margin: 0 auto; }
+  #login-screen h1 { font-size: 1.6rem; }
+  #login-screen p { color: var(--muted); margin-top: 8px; }
+  .btn {
+    background: var(--accent); color: var(--on-accent); border: 0; border-radius: 12px;
+    padding: 12px 18px; font-size: 1rem; font-weight: 600; cursor: pointer;
   }
-  header h1 { font-size: 1.3rem; margin: 0; }
-  main { padding: 0 16px 40px; max-width: 640px; margin: 0 auto; }
-  .card {
-    background: var(--card);
-    border-radius: 14px;
-    padding: 16px;
-    margin-bottom: 14px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
-  }
-  .sync-status { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  #login-btn { margin-top: 28px; width: 100%; }
+  .btn-quiet { background: transparent; color: var(--muted); font-weight: 500; width: 100%; padding: 14px; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* aplikacja */
+  #app-screen { display: none; }
+  header { padding: 18px 16px 6px; max-width: 640px; margin: 0 auto; }
+  header h1 { font-size: 1.35rem; }
+  .sync-status { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   .dot.ok { background: var(--ok); }
   .dot.error { background: var(--err); }
   .dot.pending { background: var(--muted); }
-  button {
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 12px 18px;
-    font-size: 1rem;
-    width: 100%;
-    cursor: pointer;
+  main { padding: 8px 16px calc(96px + env(safe-area-inset-bottom, 0px)); max-width: 640px; margin: 0 auto; }
+  h2.sec { font-size: 0.95rem; font-weight: 600; color: var(--muted); margin: 22px 2px 10px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; margin-bottom: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+  .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 10px 6px; text-align: center; }
+  .stat b { display: block; font-size: 1.5rem; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .stat span { font-size: 0.72rem; color: var(--muted); }
+
+  .tile {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--ch);
+    border-radius: 16px; padding: 14px 16px; margin-bottom: 12px;
   }
-  #login-screen { text-align: center; padding-top: 60px; }
-  #app-screen { display: none; }
-  ul { padding-left: 20px; margin: 8px 0; }
-  .event-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0;
-    border-top: 1px solid rgba(128,128,128,0.15);
+  .tile-head { display: flex; align-items: center; gap: 10px; }
+  .tile-head strong { font-size: 1.05rem; flex: 1; }
+  .tile-head .chev { color: var(--muted); font-size: 1.3rem; }
+  .avatar {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
+    background: var(--ch-soft); color: var(--ch); font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
   }
-  .event-item button {
-    width: auto;
-    padding: 6px 12px;
-    font-size: 0.85rem;
+  .sum { white-space: pre-line; color: var(--ink); margin-top: 10px; font-size: 0.95rem; }
+  .counts { display: flex; gap: 14px; margin-top: 10px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .warnbox { background: var(--warn-soft); color: var(--warn); border-radius: 12px; padding: 10px 12px; font-size: 0.88rem; margin-bottom: 12px; }
+
+  .child-head { display: flex; align-items: center; gap: 12px; margin: 10px 2px 14px; }
+  .child-head .avatar { width: 44px; height: 44px; font-size: 1.1rem; }
+  .child-head h2 { font-size: 1.3rem; }
+  .child-head small { display: block; color: var(--muted); font-size: 0.8rem; }
+
+  .sect-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .sect-title h3 { font-size: 1rem; }
+  .badge { font-size: 0.75rem; background: var(--ch-soft, var(--line)); color: var(--ch, var(--muted)); padding: 2px 9px; border-radius: 999px; font-weight: 600; }
+  .empty { color: var(--muted); font-size: 0.9rem; padding: 4px 0 2px; }
+  ul.rows { list-style: none; margin: 0; padding: 0; }
+  ul.rows li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+  ul.rows li:first-child { border-top: 0; }
+  ul.rows .main { flex: 1; min-width: 0; }
+  ul.rows b { font-weight: 600; display: block; overflow-wrap: anywhere; }
+  ul.rows small { color: var(--muted); font-size: 0.8rem; }
+  .grade { min-width: 38px; height: 38px; border-radius: 10px; background: var(--ch-soft); color: var(--ch); font-weight: 700; font-size: 1.1rem; display: inline-flex; align-items: center; justify-content: center; padding: 0 6px; }
+  .chip { font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; background: var(--line); color: var(--muted); font-weight: 600; white-space: nowrap; }
+  .chip.neg { background: var(--err-soft); color: var(--err); }
+  .chip.pos { background: var(--ok-soft); color: var(--ok); }
+  .unread { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+  .read { width: 8px; height: 8px; border-radius: 50%; background: transparent; border: 1px solid var(--line); flex: none; }
+  .tag { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--ch-soft); color: var(--ch); margin-right: 6px; }
+  .add { background: transparent; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 6px 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .add:disabled { opacity: 0.6; cursor: default; }
+  .added { color: var(--ok); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
+
+  nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: var(--card); border-top: 1px solid var(--line);
+    display: flex; justify-content: center;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .nav-inner { display: flex; width: 100%; max-width: 640px; }
+  nav button {
+    flex: 1; background: transparent; border: 0; padding: 8px 4px 10px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 0.75rem; color: var(--muted);
+  }
+  nav button[aria-current="page"] { color: var(--ink); font-weight: 700; }
+  nav .ico { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem; background: transparent; }
+  nav .ico.av { background: var(--ch-soft); color: var(--ch); font-weight: 700; font-size: 0.9rem; }
+  nav button[aria-current="page"] .ico { box-shadow: 0 0 0 2px var(--ch, var(--accent)); }
+
+  #toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-size: 0.9rem;
+    max-width: calc(100% - 32px); z-index: 20; display: none; text-align: center;
+  }
+  #toast.err { background: var(--err); color: #fff; }
+  @media (prefers-reduced-motion: no-preference) {
+    nav button { transition: color 0.15s; }
   }
 </style>
 </head>
@@ -81,8 +167,8 @@
 
 <div id="login-screen">
   <h1>Podsumowanie dnia</h1>
-  <p style="color: var(--muted)">Librus i WhatsApp w jednym miejscu</p>
-  <button id="login-btn" style="max-width: 260px; margin: 20px auto;">Zaloguj się przez Google</button>
+  <p>Librus dla obojga dzieci w jednym miejscu.</p>
+  <button id="login-btn" class="btn">Zaloguj się przez Google</button>
 </div>
 
 <div id="app-screen">
@@ -90,41 +176,23 @@
     <h1 id="greeting">Cześć!</h1>
     <div class="sync-status">
       <span class="dot pending" id="sync-dot"></span>
-      <span id="sync-text">Wczytywanie...</span>
+      <span id="sync-text">Wczytywanie…</span>
     </div>
   </header>
-  <main>
-    <div class="card">
-      <h2 style="margin-top:0;">📚 Librus</h2>
-      <div id="librus-summary">Brak danych — poczekaj na pierwszą synchronizację.</div>
-    </div>
-
-    <div class="card" id="events-card" style="display:none;">
-      <h2 style="margin-top:0;">📅 Wykryte terminy</h2>
-      <div id="events-list"></div>
-    </div>
-
-    <div class="card">
-      <h2 style="margin-top:0;">💬 WhatsApp</h2>
-      <div id="whatsapp-summary" style="color: var(--muted);">Moduł jeszcze niepodłączony.</div>
-    </div>
-
-    <button id="logout-btn" style="background: transparent; color: var(--muted); margin-top: 10px;">Wyloguj</button>
-  </main>
+  <main id="content"></main>
+  <nav aria-label="Widoki"><div class="nav-inner" id="nav"></div></nav>
+  <div id="toast" role="status" aria-live="polite"></div>
 </div>
 
-<!-- Firebase (wersja modularna, ładowana z CDN Google) -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import {
-    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+    getAuth, GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup, signOut, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import {
     getFirestore, doc, onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
-  // TODO: podmień na dane swojego projektu Firebase
-  // (Konsola Firebase -> Ustawienia projektu -> Twoje aplikacje -> konfiguracja SDK)
   const firebaseConfig = {
     apiKey: "AIzaSyCI3MeTZO--eZewVUUyeVwYnlrja5rT-dQ",
     authDomain: "libapp-31f52.firebaseapp.com",
@@ -139,80 +207,312 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const loginScreen = document.getElementById("login-screen");
-  const appScreen = document.getElementById("app-screen");
+  const TZ = "Europe/Warsaw";
+  const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+  const $ = (sel) => document.querySelector(sel);
 
-  document.getElementById("login-btn").addEventListener("click", () => {
+  // ---------- pomocnicze ----------
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const arr = (v) => (Array.isArray(v) ? v : []);
+  const pad = (n) => String(n).padStart(2, "0");
+  const isoDate = /^\d{4}-\d{2}-\d{2}$/;
+
+  function todayISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  }
+  function fmtDate(s) {
+    if (!s) return "";
+    if (!isoDate.test(s)) return esc(s);
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("pl-PL", { weekday: "short", day: "numeric", month: "short" });
+  }
+  function fmtStamp(ts) {
+    return ts?.toDate?.().toLocaleString("pl-PL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) ?? "";
+  }
+  function addMinutes(date, time, mins) {
+    const [y, mo, d] = date.split("-").map(Number);
+    const [h, mi] = time.split(":").map(Number);
+    const t = new Date(Date.UTC(y, mo - 1, d, h, mi + mins));
+    return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}T${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:00`;
+  }
+  function addDays(date, n) {
+    const [y, mo, d] = date.split("-").map(Number);
+    const t = new Date(Date.UTC(y, mo - 1, d + n));
+    return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+  }
+  // deterministyczny skrót -> id wydarzenia (base32hex: 0-9a-v), dzięki temu ten sam termin nie dubluje się w kalendarzu
+  function cyrb53(str) {
+    let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str.charCodeAt(i);
+      h1 = Math.imul(h1 ^ ch, 2654435761);
+      h2 = Math.imul(h2 ^ ch, 1597334677);
+    }
+    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+    return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+  }
+
+  let toastTimer = null;
+  function toast(msg, isErr = false) {
+    const el = $("#toast");
+    el.textContent = msg;
+    el.className = isErr ? "err" : "";
+    el.style.display = "block";
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (el.style.display = "none"), 5000);
+  }
+
+  // ---------- stan ----------
+  const state = { data: null, view: "pulpit" };
+  const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
+
+  function loadAdded() {
+    try { return new Set(JSON.parse(localStorage.getItem("libapp_added") || "[]")); } catch { return new Set(); }
+  }
+  function markAdded(id) {
+    const s = loadAdded(); s.add(id);
+    try { localStorage.setItem("libapp_added", JSON.stringify([...s])); } catch {}
+  }
+
+  function getChildren(d) {
+    const map = d?.librus?.children || {};
+    const order = arr(d?.librus?.childOrder).filter((k) => map[k]);
+    for (const k of Object.keys(map)) if (!order.includes(k)) order.push(k);
+    return order.map((k, i) => ({ key: k, idx: i % 3, ...map[k] }));
+  }
+  const sec = (c) => ({
+    grades: arr(c.sections?.grades),
+    remarks: arr(c.sections?.remarks),
+    events: arr(c.sections?.events).filter((e) => e.date && e.date >= todayISO()).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || ""))),
+    messages: arr(c.sections?.messages),
+  });
+
+  // ---------- widoki ----------
+  function eventRow(ev, child, showTag) {
+    const key = `${child.key}|${ev.title}|${ev.date}|${ev.time || ""}`;
+    const id = "lib" + cyrb53(key).toString(32);
+    registry.set(id, { ev, childKey: child.key, childName: child.name });
+    const added = loadAdded().has(id);
+    const canAdd = isoDate.test(ev.date || "");
+    return `<li>
+      <div class="main">
+        <b>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${esc(ev.title)}</b>
+        <small>${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${ev.sourceNote ? " · " + esc(ev.sourceNote) : ""}</small>
+      </div>
+      ${added ? `<span class="added">✓ W kalendarzu</span>` : canAdd ? `<button class="add" data-add="${id}">Dodaj do kalendarza</button>` : ""}
+    </li>`;
+  }
+
+  function viewPulpit(d) {
+    const kids = getChildren(d);
+    if (kids.length === 0) {
+      return `<div class="card"><p>Czekam na pierwszą synchronizację. Uruchamia się codziennie rano.</p></div>`;
+    }
+    const all = kids.map((k) => ({ k, s: sec(k) }));
+    const total = (f) => all.reduce((n, x) => n + f(x.s), 0);
+    const events = all
+      .flatMap(({ k, s }) => s.events.map((ev) => ({ ev, k })))
+      .sort((a, b) => (a.ev.date + (a.ev.time || "")).localeCompare(b.ev.date + (b.ev.time || "")))
+      .slice(0, 8);
+
+    const stats = `<div class="stats">
+      <div class="stat"><b>${total((s) => s.grades.length)}</b><span>oceny</span></div>
+      <div class="stat"><b>${total((s) => s.remarks.length)}</b><span>uwagi</span></div>
+      <div class="stat"><b>${total((s) => s.messages.length)}</b><span>wiadomości</span></div>
+      <div class="stat"><b>${total((s) => s.events.length)}</b><span>terminy</span></div>
+    </div>`;
+
+    const tiles = all.map(({ k, s }) => `
+      <button class="tile c${k.idx}" data-goto="${esc(k.key)}">
+        <div class="tile-head"><span class="avatar">${esc((k.name || "?").charAt(0).toUpperCase())}</span><strong>${esc(k.name)}</strong><span class="chev" aria-hidden="true">›</span></div>
+        ${k.lastError ? `<p class="sum" style="color:var(--warn)">⚠ Nie udało się odświeżyć: ${esc(k.lastError)}</p>` : ""}
+        <p class="sum">${esc(k.summary || "Brak istotnych nowości.")}</p>
+        <div class="counts"><span>⭐ ${s.grades.length}</span><span>⚠️ ${s.remarks.length}</span><span>✉️ ${s.messages.length}</span><span>📅 ${s.events.length}</span></div>
+      </button>`).join("");
+
+    const evCard = events.length
+      ? `<h2 class="sec">Nadchodzące terminy</h2><div class="card"><ul class="rows">${events.map(({ ev, k }) => eventRow(ev, k, true)).join("")}</ul></div>`
+      : "";
+
+    return `${stats}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+      <h2 class="sec">WhatsApp</h2><div class="card"><p style="color:var(--muted)">Moduł jeszcze niepodłączony.</p></div>
+      <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>`;
+  }
+
+  function section(icon, title, count, body, emptyText, badgeText) {
+    return `<div class="card">
+      <div class="sect-title"><h3>${icon} ${title}</h3>${count > 0 ? `<span class="badge">${badgeText || count}</span>` : ""}</div>
+      ${count > 0 ? `<ul class="rows">${body}</ul>` : `<p class="empty">${emptyText}</p>`}
+    </div>`;
+  }
+
+  function viewChild(d, key) {
+    const c = getChildren(d).find((k) => k.key === key);
+    if (!c) return `<div class="card"><p>Nie ma danych dla tego dziecka.</p></div>`;
+    const s = sec(c);
+    const hasSections = !!c.sections;
+
+    const grades = s.grades.map((g) => `<li><span class="grade">${esc(g.grade)}</span>
+      <div class="main"><b>${esc(g.subject)}</b><small>${fmtDate(g.date)}${g.note ? (g.date ? " · " : "") + esc(g.note) : ""}</small></div></li>`).join("");
+
+    const remarks = s.remarks.map((r) => {
+      const t = (r.type || "").toLowerCase();
+      const cls = t.startsWith("neg") ? "neg" : t.startsWith("poz") ? "pos" : "";
+      return `<li><div class="main"><b>${esc(r.text)}</b><small>${esc(r.teacher)}${r.teacher && r.date ? " · " : ""}${fmtDate(r.date)}</small></div>${r.type ? `<span class="chip ${cls}">${esc(r.type)}</span>` : ""}</li>`;
+    }).join("");
+
+    const unread = s.messages.filter((m) => m.unread).length;
+    const messages = s.messages.map((m) => `<li><span class="${m.unread ? "unread" : "read"}" aria-label="${m.unread ? "nieprzeczytana" : "przeczytana"}"></span>
+      <div class="main"><b>${esc(m.subject)}</b><small>${esc(m.from)}${m.from && m.date ? " · " : ""}${esc(m.date || "")}</small></div>
+      ${m.kind === "ogłoszenie" ? `<span class="chip">ogłoszenie</span>` : ""}</li>`).join("");
+
+    const events = s.events.map((ev) => eventRow(ev, c, false)).join("");
+
+    return `<div class="c${c.idx}">
+      <div class="child-head"><span class="avatar">${esc((c.name || "?").charAt(0).toUpperCase())}</span>
+        <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}</small></div></div>
+      ${c.lastError ? `<div class="warnbox">Ostatnie odświeżenie się nie udało: ${esc(c.lastError)}. Widać dane z poprzedniej synchronizacji.</div>` : ""}
+      ${c.summary ? `<div class="card"><p class="sum" style="margin:0">${esc(c.summary)}</p></div>` : ""}
+      ${hasSections ? `
+        ${section("⭐", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
+        ${section("⚠️", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
+        ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 30 dni.")}
+        ${section("✉️", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
+      ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
+    </div>`;
+  }
+
+  function render() {
+    const d = state.data;
+    const kids = getChildren(d);
+    if (state.view !== "pulpit" && !kids.some((k) => k.key === state.view)) state.view = "pulpit";
+    registry.clear();
+    $("#content").innerHTML = state.view === "pulpit" ? viewPulpit(d) : viewChild(d, state.view);
+
+    $("#nav").innerHTML = `
+      <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">🏠</span>Pulpit</button>
+      ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${esc((k.name || "?").charAt(0).toUpperCase())}</span>${esc(k.name)}</button>`).join("")}`;
+
+    const dot = $("#sync-dot"), text = $("#sync-text");
+    if (d?.lastSync) {
+      const time = fmtStamp(d.lastSync.timestamp);
+      if (d.lastSync.status === "ok") { dot.className = "dot ok"; text.textContent = `Ostatnia synchronizacja: ${time}`; }
+      else { dot.className = "dot error"; text.textContent = `Błąd synchronizacji (${time}): ${d.lastSync.error ?? ""}`; }
+    }
+  }
+
+  // ---------- kalendarz Google ----------
+  let calToken = { value: null, exp: 0 };
+  async function getToken(force = false) {
+    if (!force && calToken.value && Date.now() < calToken.exp) return calToken.value;
+    const p = new GoogleAuthProvider();
+    p.addScope(CAL_SCOPE);
+    if (auth.currentUser?.email) p.setCustomParameters({ login_hint: auth.currentUser.email });
+    const result = await reauthenticateWithPopup(auth.currentUser, p);
+    const cred = GoogleAuthProvider.credentialFromResult(result);
+    if (!cred?.accessToken) throw new Error("Google nie zwrócił zgody na kalendarz.");
+    calToken = { value: cred.accessToken, exp: Date.now() + 50 * 60 * 1000 };
+    return calToken.value;
+  }
+
+  // Przypomnienia: dla terminu z godziną — dzień wcześniej o 18:00 i godzinę przed;
+  // dla terminu bez godziny (całodniowy) — dzień wcześniej o 18:00.
+  function buildEventBody({ ev, childName }, id) {
+    const base = {
+      id,
+      summary: `${childName}: ${ev.title}`,
+      description: ["Librus — " + childName, ev.sourceNote].filter(Boolean).join("\n"),
+    };
+    if (ev.time && /^\d{1,2}:\d{2}$/.test(ev.time)) {
+      const [h, m] = ev.time.split(":").map(Number);
+      const startMin = h * 60 + m;
+      return {
+        ...base,
+        start: { dateTime: `${ev.date}T${pad(h)}:${pad(m)}:00`, timeZone: TZ },
+        end: { dateTime: addMinutes(ev.date, `${pad(h)}:${pad(m)}`, 60), timeZone: TZ },
+        reminders: { useDefault: false, overrides: [{ method: "popup", minutes: startMin + 360 }, { method: "popup", minutes: 60 }] },
+      };
+    }
+    return {
+      ...base,
+      start: { date: ev.date },
+      end: { date: addDays(ev.date, 1) },
+      reminders: { useDefault: false, overrides: [{ method: "popup", minutes: 360 }] },
+    };
+  }
+
+  const insertEvent = (body, token) => fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  function friendlyError(e) {
+    const msg = String(e?.message || e);
+    if (e?.code === "auth/popup-closed-by-user" || e?.code === "auth/cancelled-popup-request") return "Anulowano logowanie do Google.";
+    if (e?.code === "auth/popup-blocked") return "Przeglądarka zablokowała okno logowania. Zezwól na wyskakujące okna i spróbuj ponownie.";
+    if (/has not been used|accessNotConfigured|is disabled/i.test(msg)) return "Włącz Google Calendar API w projekcie Google Cloud, potem spróbuj ponownie.";
+    return msg;
+  }
+
+  async function onAdd(id, btn) {
+    const item = registry.get(id);
+    if (!item) return;
+    btn.disabled = true;
+    btn.textContent = "Dodaję…";
+    try {
+      const body = buildEventBody(item, id);
+      let token = await getToken();
+      let res = await insertEvent(body, token);
+      if (res.status === 401) { token = await getToken(true); res = await insertEvent(body, token); }
+      if (res.ok) { markAdded(id); toast("Dodano do kalendarza."); }
+      else if (res.status === 409) { markAdded(id); toast("Ten termin jest już w kalendarzu."); }
+      else {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error?.message || `Błąd ${res.status}`);
+      }
+      render();
+    } catch (e) {
+      toast(friendlyError(e), true);
+      btn.disabled = false;
+      btn.textContent = "Dodaj do kalendarza";
+    }
+  }
+
+  // ---------- zdarzenia ----------
+  document.addEventListener("click", (e) => {
+    const goto = e.target.closest("[data-goto]");
+    if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    const add = e.target.closest("[data-add]");
+    if (add) { onAdd(add.dataset.add, add); return; }
+    if (e.target.closest("#logout-btn")) signOut(auth);
+  });
+
+  $("#login-btn").addEventListener("click", () => {
     signInWithPopup(auth, provider).catch((e) => alert("Błąd logowania: " + e.message));
   });
 
-  document.getElementById("logout-btn").addEventListener("click", () => signOut(auth));
-
-  let unsubscribeSnapshot = null;
-
+  let unsubscribe = null;
   onAuthStateChanged(auth, (user) => {
-    if (unsubscribeSnapshot) unsubscribeSnapshot();
-
+    if (unsubscribe) unsubscribe();
     if (user) {
-      loginScreen.style.display = "none";
-      appScreen.style.display = "block";
-      document.getElementById("greeting").textContent = `Cześć, ${user.displayName?.split(" ")[0] || ""}!`;
-
-      // WAŻNE: user.uid musi być wpisany do scripts/users.config.json (firestoreUid),
-      // żeby GitHub Actions zapisywał dane pod właściwym dokumentem.
-      const ref = doc(db, "users", user.uid);
-      unsubscribeSnapshot = onSnapshot(ref, (snap) => renderData(snap.data()));
+      $("#login-screen").style.display = "none";
+      $("#app-screen").style.display = "block";
+      $("#greeting").textContent = `Cześć, ${user.displayName?.split(" ")[0] || ""}!`;
+      // user.uid musi być wpisany do scripts/users.config.json (firestoreUid)
+      unsubscribe = onSnapshot(doc(db, "users", user.uid), (snap) => { state.data = snap.data() || null; render(); },
+        (err) => { $("#sync-dot").className = "dot error"; $("#sync-text").textContent = "Brak dostępu do danych: " + err.message; });
+      render();
     } else {
-      loginScreen.style.display = "block";
-      appScreen.style.display = "none";
+      $("#login-screen").style.display = "block";
+      $("#app-screen").style.display = "none";
+      state.data = null; state.view = "pulpit";
     }
   });
 
-  function renderData(data) {
-    if (!data) return;
-
-    const dot = document.getElementById("sync-dot");
-    const text = document.getElementById("sync-text");
-    if (data.lastSync) {
-      const time = data.lastSync.timestamp?.toDate?.().toLocaleString("pl-PL") ?? "";
-      if (data.lastSync.status === "ok") {
-        dot.className = "dot ok";
-        text.textContent = `Ostatnia synchronizacja: ${time}`;
-      } else {
-        dot.className = "dot error";
-        text.textContent = `Błąd synchronizacji (${time}): ${data.lastSync.error ?? ""}`;
-      }
-    }
-
-    if (data.librus?.summary) {
-      document.getElementById("librus-summary").innerHTML =
-        data.librus.summary.replace(/\n/g, "<br>");
-    }
-
-    const events = data.librus?.detectedEvents || [];
-    const eventsCard = document.getElementById("events-card");
-    const eventsList = document.getElementById("events-list");
-    if (events.length > 0) {
-      eventsCard.style.display = "block";
-      eventsList.innerHTML = events.map((ev, i) => `
-        <div class="event-item">
-          <span>${ev.title} — ${ev.date}${ev.time ? " " + ev.time : ""}</span>
-          <button data-idx="${i}" class="add-to-calendar">Dodaj</button>
-        </div>
-      `).join("");
-      // Podłączenie kalendarza Google zrobimy w kolejnym module —
-      // na razie przycisk jest widoczny, ale jeszcze nieaktywny.
-      eventsList.querySelectorAll(".add-to-calendar").forEach((btn) => {
-        btn.addEventListener("click", () => alert("Integracja z Kalendarzem Google — w kolejnym kroku."));
-      });
-    } else {
-      eventsCard.style.display = "none";
-    }
-  }
-
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("sw.js").catch(() => {});
-  }
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
