@@ -1,0 +1,32 @@
+name: Codzienna synchronizacja Librus
+
+on:
+  schedule:
+    # 5:30 UTC = 6:30 lub 7:30 czasu polskiego (zależnie od czasu letniego/zimowego)
+    - cron: "30 5 * * *"
+  workflow_dispatch: {} # pozwala odpalić ręcznie z zakładki "Actions" w GitHubie
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
+
+      - name: Instalacja Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalacja zależności
+        run: npm install
+
+      - name: Synchronizacja Librusa
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LIBRUS_LOGIN_TOMEK: ${{ secrets.LIBRUS_LOGIN_TOMEK }}
+          LIBRUS_PASSWORD_TOMEK: ${{ secrets.LIBRUS_PASSWORD_TOMEK }}
+          LIBRUS_LOGIN_ZONA: ${{ secrets.LIBRUS_LOGIN_ZONA }}
+          LIBRUS_PASSWORD_ZONA: ${{ secrets.LIBRUS_PASSWORD_ZONA }}
+        run: npm run sync
