@@ -8,8 +8,10 @@
 <meta name="apple-mobile-web-app-title" content="Podsumowanie" />
 <title>Podsumowanie dnia</title>
 <link rel="manifest" href="manifest.json" />
-<meta name="theme-color" content="#eef2f1" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#0e1517" media="(prefers-color-scheme: dark)" />
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
+<link rel="apple-touch-icon" href="apple-touch-icon.png" />
+<meta name="theme-color" content="#0f7286" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0b2f3a" media="(prefers-color-scheme: dark)" />
 <style>
   :root {
     --bg: #eef2f1;
@@ -303,6 +305,85 @@
   .seg.two { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
   .calc { font-size: 0.8rem; color: var(--muted); margin: 0 0 6px; overflow-wrap: anywhere; }
 
+
+  /* ===== wygląd: baner, cienie, ikony ===== */
+  :root {
+    --accent-soft: #d9eef0;
+    --shadow: 0 1px 2px rgba(15, 35, 45, 0.05), 0 8px 22px rgba(15, 35, 45, 0.06);
+    --hero-a: #0d7c86; --hero-b: #2f5fb3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --accent-soft: #17393d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 22px rgba(0, 0, 0, 0.35);
+      --hero-a: #0b4f5a; --hero-b: #1d3a73;
+    }
+  }
+  body { padding-top: 0; background: var(--bg); }
+  .ic { width: 1.2em; height: 1.2em; vertical-align: -0.24em; flex: none; }
+  header.hero {
+    max-width: none; margin: 0; color: #fff;
+    background: linear-gradient(135deg, var(--hero-a), var(--hero-b));
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 0 20px;
+    border-radius: 0 0 26px 26px;
+    box-shadow: 0 10px 28px rgba(13, 80, 110, 0.22);
+  }
+  .hero-in { max-width: 640px; margin: 0 auto; padding: 0 18px; }
+  .hero-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  header.hero h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
+  .hero-date { font-size: 0.85rem; opacity: 0.9; }
+  .hero .sync-status { color: rgba(255, 255, 255, 0.92); margin-top: 8px; font-size: 0.8rem; background: rgba(255, 255, 255, 0.14); border-radius: 999px; padding: 4px 12px; display: inline-flex; }
+  .hero .dot.ok { background: #7ef0b2; }
+  .hero .dot.error { background: #ffb3b3; }
+  .hero .dot.pending { background: rgba(255, 255, 255, 0.7); }
+  main { padding-top: 14px; }
+  .card, .tile, .stat { box-shadow: var(--shadow); border-color: transparent; }
+  .card { border-radius: 16px; }
+  .tile { border-radius: 16px; border-left-color: var(--ch); }
+  h2.sec { display: flex; align-items: center; gap: 8px; }
+  .add { background: var(--accent-soft); border: 0; color: var(--accent); display: inline-flex; align-items: center; gap: 6px; border-radius: 12px; }
+  .added { display: inline-flex; align-items: center; gap: 4px; }
+  .check .ic { width: 26px; height: 26px; }
+  .tile-head .chev { display: inline-flex; color: var(--muted); }
+  .tile-head .chev .ic { width: 20px; height: 20px; }
+  .counts span { display: inline-flex; align-items: center; gap: 5px; }
+  .sect-title h3 { display: flex; align-items: center; gap: 8px; }
+  .sect-title h3 .ic { color: var(--ch, var(--accent)); }
+  nav { border-top: 0; box-shadow: 0 -6px 24px rgba(15, 35, 45, 0.08); border-radius: 20px 20px 0 0; }
+  nav .ico { width: 44px; height: 30px; border-radius: 15px; }
+  nav .ico .ic { width: 22px; height: 22px; }
+  nav .ico.av { width: 30px; height: 30px; border-radius: 50%; }
+  nav button[aria-current="page"] .ico { box-shadow: none; background: var(--ch-soft, var(--accent-soft)); color: var(--ch, var(--accent)); }
+  nav button[aria-current="page"] { color: var(--ch, var(--accent)); }
+  nav button[aria-current="page"] .ico.av { box-shadow: 0 0 0 2px var(--ch, var(--accent)); }
+  .nb { top: 0; left: calc(50% + 8px); }
+  .empty .ic, p.lucky .ic, small .ic { width: 1.05em; height: 1.05em; }
+  details.card.plan > summary, details.card.week > summary { display: flex; align-items: center; gap: 8px; }
+
+
+  /* przegląd tygodnia, ustawienia */
+  details.card.week > summary { cursor: pointer; font-weight: 700; padding: 2px 0; list-style: none; }
+  details.card.week > summary::-webkit-details-marker { display: none; }
+  details.card.week > summary::after { content: "›"; margin-left: auto; color: var(--muted); font-size: 1.4rem; transform: rotate(90deg); }
+  details.card.week[open] > summary::after { transform: rotate(-90deg); }
+  .wk-h { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 6px; }
+  .wk-kid { padding: 8px 0; border-top: 1px solid var(--line); }
+  .wk-kid:first-of-type { border-top: 0; }
+  .wk-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; font-size: 0.9rem; }
+  .wk-line.sub { color: var(--muted); font-size: 0.82rem; }
+  .wkg { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; color: var(--muted); }
+  .wk-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+  .wk-chips .chip { font-size: 0.78rem; padding: 4px 10px; }
+  .wk-day { margin-top: 8px; }
+  .wk-dh { font-weight: 700; font-size: 0.88rem; padding: 6px 0 0; }
+  .fld-h { font-weight: 700; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
+  .fld { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .fld > span { width: 84px; flex: none; }
+  .fld input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+  .btn-small { padding: 10px 16px; font-size: 0.92rem; border-radius: 12px; margin-top: 8px; display: inline-flex; align-items: center; gap: 8px; }
+  .btn-quiet2 { background: var(--accent-soft); color: var(--accent); }
+  .btnrow { display: flex; gap: 8px; flex-wrap: wrap; }
+
   /* plan lekcji */
   details.plan summary { padding: 12px 0; }
 </style>
@@ -316,11 +397,16 @@
 </div>
 
 <div id="app-screen">
-  <header>
-    <h1 id="greeting">Cześć!</h1>
-    <div class="sync-status">
-      <span class="dot pending" id="sync-dot"></span>
-      <span id="sync-text">Wczytywanie…</span>
+  <header class="hero">
+    <div class="hero-in">
+      <div class="hero-top">
+        <h1 id="greeting">Cześć!</h1>
+        <div class="hero-date" id="hero-date"></div>
+      </div>
+      <div class="sync-status">
+        <span class="dot pending" id="sync-dot"></span>
+        <span id="sync-text">Wczytywanie…</span>
+      </div>
     </div>
   </header>
   <main id="content"></main>
@@ -351,7 +437,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-21 · 4"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-21 · 6"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const TZ = "Europe/Warsaw";
   const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
   const $ = (sel) => document.querySelector(sel);
@@ -411,7 +497,7 @@
 
   // ---------- stan ----------
   const now0 = new Date();
-  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
+  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -427,7 +513,7 @@
     const order = arr(d?.librus?.childOrder).filter((k) => map[k]);
     for (const k of Object.keys(map)) if (!order.includes(k)) order.push(k);
     const wa = d?.whatsapp?.summaries || {};
-    return order.map((k, i) => ({ key: k, idx: i % 3, ...map[k], wa: wa[k] || null }));
+    return order.map((k, i) => ({ key: k, idx: i % 3, ...map[k], baseName: map[k].name, name: (state.names?.[k] || "").trim() || map[k].name, wa: wa[k] || null }));
   }
 
   // Terminy z Librusa + terminy wykryte w grupie WhatsApp (bez duplikatów).
@@ -454,6 +540,8 @@
   });
 
   // ---------- widoki ----------
+  const examLabel = (title) => (/kartk/i.test(title || "") ? "kartkówka" : /sprawdzian|klasówk|\btest\b|egzamin|dyktando/i.test(title || "") ? "sprawdzian" : "");
+
   function eventRow(ev, child, showTag) {
     const key = `${child.key}|${ev.title}|${ev.date}|${ev.time || ""}`;
     const id = "lib" + cyrb53(key).toString(32);
@@ -462,10 +550,10 @@
     const canAdd = isoDate.test(ev.date || "");
     return `<li>
       <div class="main">
-        <b>${esc(ev.title)}</b>
-        <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${ev.sourceNote ? " · " + esc(ev.sourceNote) : ""}</small>
+        <b>${esc(ev.title)}${examLabel(ev.title) ? ` <span class="chip neg">${examLabel(ev.title)}</span>` : ""}</b>
+        <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${ev.sourceNote && ev.sourceNote.length <= 40 ? " · " + esc(ev.sourceNote) : ""}</small>
       </div>
-      ${added ? `<span class="added">✓ Dodano</span>` : canAdd ? `<button class="add" data-add="${id}">📅 Dodaj</button>` : ""}
+      ${added ? `<span class="added">${icon("check")} Dodano</span>` : canAdd ? `<button class="add" data-add="${id}">${icon("calplus")} Dodaj</button>` : ""}
     </li>`;
   }
 
@@ -496,7 +584,7 @@
         : `<p>Wpisz ten kod w WhatsAppie:</p><div class="pair-code">${esc(w.pairingCode)}</div><p style="color:var(--muted);font-size:0.85rem">${how}. Kod działa krótko.</p>`;
     } else if (w.status === "paired") {
       const groups = arr(w.groups);
-      body = `<p><span class="added">✓ Połączono</span> · grup: ${groups.length}</p>
+      body = `<p><span class="added">${icon("check")} Połączono</span> · grup: ${groups.length}</p>
         ${groups.length ? `<ul class="wa-groups">${groups.slice(0, 40).map((g) => `<li>${esc(g.name)}</li>`).join("")}${groups.length > 40 ? `<li>…i ${groups.length - 40} więcej</li>` : ""}</ul>` : ""}
         ${syncLine(d)}`;
     } else {
@@ -565,9 +653,29 @@
       <div class="card">${list.length ? `<ul class="rows">${list.map((x) => (x.todo ? todoRow(x.todo, false, false) : eventRow(x.ev, x.k, true))).join("")}</ul>` : `<p class="empty">Brak terminów tego dnia.</p>`}</div>`;
   }
 
-  // Ikony: w kolejnej paczce zostaną zastąpione zestawem SVG; na razie emotikony.
-  const ICONS = { star: "⭐" };
-  const icon = (name) => ICONS[name] || "";
+  // ---------- ikony (SVG, jeden spójny styl kreskowy) ----------
+  const SVG = {
+    home: '<path d="M3 11.5 12 4l9 7.5"/><path d="M5.5 10v9.5h13V10"/><path d="M10 19.5v-5h4v5"/>',
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    calplus: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/>',
+    check: '<circle cx="12" cy="12" r="9"/><path d="m8 12.5 3 3 5-6"/>',
+    checkfill: '<circle cx="12" cy="12" r="10" fill="currentColor" stroke="none"/><path d="m7.8 12.5 3 3 5.4-6" stroke="var(--on-accent)"/>',
+    circle: '<circle cx="12" cy="12" r="9"/>',
+    star: '<path d="m12 3 2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+    alert: '<path d="M10.3 4 2.5 18a2 2 0 0 0 1.7 3h15.6a2 2 0 0 0 1.7-3L13.7 4a2 2 0 0 0-3.4 0z"/><path d="M12 9.5v4M12 17h.01"/>',
+    mail: '<rect x="3" y="5" width="18" height="14" rx="3"/><path d="m3.5 7.5 8.5 6 8.5-6"/>',
+    book: '<path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H19v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19v-3M9 7.5h6"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.2 2"/>',
+    chat: '<path d="M21 12a8.5 8.5 0 0 1-12.2 7.6L3 21l1.6-5A8.5 8.5 0 1 1 21 12z"/>',
+    sparkle: '<path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/><path d="M19 16v4M17 18h4"/>',
+    chevron: '<path d="m9 6 6 6-6 6"/>',
+    bell: '<path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 8 2.5 8h-17S6 15 6 9z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/>',
+    sliders: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
+    week: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M7 13h4M7 17h7"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.2-4 4.2-6 8-6s6.8 2 8 6"/>',
+  };
+  const icon = (name, cls = "") =>
+    `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SVG[name] || ""}</svg>`;
 
   // ---------- oceny: średnie, wykres ----------
   const MONTHS = ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"];
@@ -771,7 +879,7 @@
 
   function todoRow(t, isDone, overdue) {
     return `<li>
-      <button class="check c${t.k.idx}" data-done="${esc(t.id)}" aria-label="${isDone ? "Cofnij" : "Oznacz jako zrobione"}">${isDone ? "☑" : "☐"}</button>
+      <button class="check c${t.k.idx}" data-done="${esc(t.id)}" aria-label="${isDone ? "Cofnij" : "Oznacz jako zrobione"}">${icon(isDone ? "checkfill" : "circle")}</button>
       <div class="main"><b>${isDone ? `<s>${esc(t.text)}</s>` : esc(t.text)}</b>
         <small><span class="tag c${t.k.idx}">${esc(t.k.name)}</span>${overdue ? `<span class="od">po terminie</span> · ` : ""}${t.kind === "hw" ? "zadanie domowe" : "WhatsApp"}${t.due ? " · " + fmtDate(t.due) : ""}</small></div>
     </li>`;
@@ -806,7 +914,7 @@
       const first = lessons[0]?.time?.split("-")[0], last = lessons[lessons.length - 1]?.time?.split("-")[1];
       return `<details class="plan c${k.idx}"><summary><span class="tag c${k.idx}">${esc(k.name)}</span>Plan lekcji · ${lessons.length}${first && last ? ` · ${esc(first)}–${esc(last)}` : ""}</summary>${lessonsList(lessons)}</details>`;
     }).join("");
-    const luckyHtml = lucky.length ? `<p class="lucky">🍀 Szczęśliwy numerek: ${lucky.map((k) => `${esc(k.name)} ${esc(k.extra.luckyNumber)}`).join(", ")}</p>` : "";
+    const luckyHtml = lucky.length ? `<p class="lucky">${icon("sparkle")} Szczęśliwy numerek: ${lucky.map((k) => `${esc(k.name)} ${esc(k.extra.luckyNumber)}`).join(", ")}</p>` : "";
 
     const body = rows || planHtml || luckyHtml
       ? `${rows ? `<ul class="rows">${rows}</ul>` : `<p class="empty">Brak terminów i zadań.</p>`}${planHtml}${luckyHtml}`
@@ -851,8 +959,180 @@
     const hwBody = hw.map((t) => todoRow(t, done.has(t.id), !done.has(t.id) && t.due && t.due < today)).join("");
     const days = arr(c.extra.timetable).filter((x) => x.date >= today).slice(0, 3);
     const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary class="cap1">${esc(longDate(x.date))} · ${x.lessons.length} lekcji</summary>${lessonsList(x.lessons)}</details>`).join("");
-    return `${section("📝", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.")}
-      <div class="card"><div class="sect-title"><h3>🎒 Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>`;
+    return `${section("book", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.")}
+      <div class="card"><div class="sect-title"><h3>${icon("clock")} Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>`;
+  }
+
+  const SHORT = { "matematyka": "Mat.", "język polski": "Polski", "język angielski": "Angielski", "język niemiecki": "Niemiecki", "przyroda": "Przyroda", "historia": "Historia", "wychowanie fizyczne": "WF", "edukacja informatyczna": "Inf.", "informatyka": "Inf.", "muzyka": "Muzyka", "plastyka": "Plastyka", "religia": "Religia", "biologia": "Biologia", "geografia": "Geografia", "fizyka": "Fizyka", "chemia": "Chemia", "technika": "Technika", "edukacja zdrowotna": "Zdrowie" };
+  const shortSubject = (name) => {
+    const n = String(name || "").trim();
+    if (SHORT[n.toLowerCase()]) return SHORT[n.toLowerCase()];
+    const base = n.replace(/^Język\s+/i, "");
+    return base.length > 10 ? base.slice(0, 9) + "…" : base;
+  };
+
+  // ---------- przegląd tygodnia ----------
+  function weekCard(d, open) {
+    const kids = getChildren(d);
+    if (kids.length === 0) return "";
+    const today = todayISO();
+    const sunday = new Date().getDay() === 0;
+    const start = sunday ? shiftISO(today, 1) : today;
+    const days = Array.from({ length: 7 }, (_, i) => shiftISO(start, i));
+    const done = loadDone();
+    const dueItems = todoItems(d).filter((t) => t.due && !done.has(t.id));
+
+    const byDay = days.map((iso) => ({
+      iso,
+      events: kids.flatMap((k) => allEvents(k).filter((e) => e.date === iso).map((ev) => ({ ev, k })))
+        .sort((a, b) => (a.ev.time || "").localeCompare(b.ev.time || "")),
+      todos: dueItems.filter((t) => t.due === iso),
+    })).filter((x) => x.events.length || x.todos.length);
+
+    const exams = byDay.reduce((n, x) => n + x.events.filter(({ ev }) => examLabel(ev.title)).length, 0);
+    const homework = byDay.reduce((n, x) => n + x.todos.filter((t) => t.kind === "hw").length, 0);
+    const others = byDay.reduce((n, x) => n + x.todos.filter((t) => t.kind !== "hw").length + x.events.filter(({ ev }) => !examLabel(ev.title)).length, 0);
+
+    const past = kids.map((k) => {
+      const all = gradesOf(k);
+      const fresh = recentGrades(all, 7).sort((a, b) => b.date.localeCompare(a.date));
+      const scoped = all.filter((g) => inScope(g, "cur"));
+      const now = overallAt(scoped, today), before = overallAt(scoped, shiftISO(today, -7));
+      const remarks = arr(k.sections?.remarks).filter((r) => r.date && r.date >= shiftISO(today, -7)).length;
+      const gradesHtml = fresh.length
+        ? fresh.slice(0, 8).map((g) => `<span class="wkg">${esc(shortSubject(g.subject))} ${gradeChip(g)}</span>`).join("")
+        : `<span class="sub">brak nowych ocen</span>`;
+      return `<div class="wk-kid c${k.idx}"><span class="tag c${k.idx}">${esc(k.name)}</span>
+        <div class="wk-line">${gradesHtml}</div>
+        <div class="wk-line sub">${now != null ? `średnia ${fmtAvg(now)}${before != null && Math.abs(now - before) >= 0.005 ? ` (${now > before ? "+" : "−"}${fmtAvg(Math.abs(now - before))} w tydzień)` : ""}` : ""}${remarks ? `${now != null ? " · " : ""}uwagi: ${remarks}` : ""}</div></div>`;
+    }).join("");
+
+    const rangeLabel = `${fmtDate(days[0])} – ${fmtDate(days[6])}`;
+    const upcoming = byDay.length
+      ? byDay.map((x) => `<div class="wk-day"><div class="wk-dh cap1">${esc(longDate(x.iso))}</div><ul class="rows">${x.events.map(({ ev, k }) => eventRow(ev, k, true)).join("")}${x.todos.map((t) => todoRow(t, false, false)).join("")}</ul></div>`).join("")
+      : `<p class="empty">Spokojny tydzień: nic zaplanowanego.</p>`;
+
+    return `<details class="card week"${open ? " open" : ""}><summary>${icon("week")} Przegląd tygodnia <span class="sub">${sunday ? "· na nowy tydzień" : ""}</span></summary>
+      <div class="wk-h">Miniony tydzień</div>${past}
+      <div class="wk-h">Przed nami · ${esc(rangeLabel)}</div>
+      <div class="wk-chips">
+        <span class="chip ${exams ? "neg" : ""}">sprawdziany i kartkówki: ${exams}</span>
+        <span class="chip">zadania domowe: ${homework}</span>
+        <span class="chip">inne terminy i zadania: ${others}</span>
+      </div>
+      ${upcoming}
+    </details>`;
+  }
+
+  // ---------- ustawienia: imiona i powiadomienia ----------
+  const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isStandalone = () => navigator.standalone === true || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  const subId = (endpoint) => "s" + cyrb53(endpoint).toString(36);
+  function b64ToU8(b64) {
+    const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+    const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+  }
+  const pushRef = () => (auth.currentUser ? doc(db, "users", auth.currentUser.uid, "prefs", "push") : null);
+
+  async function savePushSub(sub) {
+    const ref = pushRef();
+    if (!ref || !sub) return;
+    const j = sub.toJSON();
+    await setDoc(ref, { subs: { [subId(j.endpoint)]: { endpoint: j.endpoint, keys: j.keys, ua: navigator.userAgent.slice(0, 120), addedAtMs: Date.now() } } }, { merge: true });
+  }
+  async function refreshPush() {
+    if (!pushSupported()) { state.push = { supported: false }; render(); return; }
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      state.push = { supported: true, permission: Notification.permission, subscribed: !!sub };
+      if (sub) savePushSub(sub).catch(() => {});
+    } catch {
+      state.push = { supported: true, permission: Notification.permission, subscribed: false };
+    }
+    render();
+  }
+  async function enablePush() {
+    const key = state.data?.pushPublicKey;
+    if (!key) { toast("Powiadomienia będą dostępne po następnej synchronizacji.", true); return; }
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Zgoda na powiadomienia nie została udzielona.", true); await refreshPush(); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(key) }));
+      await savePushSub(sub);
+      toast("Powiadomienia włączone na tym urządzeniu.");
+    } catch (e) {
+      toast("Nie udało się włączyć powiadomień: " + (e?.message || e), true);
+    }
+    await refreshPush();
+  }
+  async function disablePush() {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) {
+        const id = subId(sub.endpoint);
+        await sub.unsubscribe();
+        const ref = pushRef();
+        if (ref) await setDoc(ref, { subs: { [id]: null } }, { merge: true });
+      }
+      toast("Powiadomienia wyłączone na tym urządzeniu.");
+    } catch (e) {
+      toast("Nie udało się wyłączyć: " + (e?.message || e), true);
+    }
+    await refreshPush();
+  }
+  async function testPush() {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      await reg.showNotification("Test powiadomień", { body: "Jeśli to widzisz, to urządzenie może wyświetlać powiadomienia.", icon: "icon-192.png", tag: "test" });
+    } catch (e) {
+      toast("Nie udało się pokazać powiadomienia: " + (e?.message || e), true);
+    }
+  }
+  async function saveNames() {
+    const names = {};
+    document.querySelectorAll("input[data-name-key]").forEach((el) => { names[el.dataset.nameKey] = el.value.trim().slice(0, 30); });
+    state.names = names;
+    const ref = prefsRef();
+    if (!ref) return;
+    try {
+      await setDoc(ref, { names }, { merge: true });
+      toast("Zapisano imiona.");
+    } catch {
+      toast("Nie udało się zapisać (sprawdź reguły Firestore).", true);
+    }
+    render();
+  }
+
+  function settingsCard(d) {
+    const kids = getChildren(d);
+    const names = kids.length
+      ? `<div class="fld-h">Imiona dzieci</div><p class="empty" style="margin:0 0 8px">Widoczne tylko w tej appce. W repozytorium i logach są same inicjały.</p>
+        ${kids.map((k) => `<label class="fld c${k.idx}"><span><span class="tag c${k.idx}">${esc(k.baseName || k.key)}</span></span>
+          <input data-name-key="${esc(k.key)}" value="${esc(state.names?.[k.key] || "")}" placeholder="Imię dziecka" maxlength="30" autocomplete="off" /></label>`).join("")}
+        <button id="save-names" class="btn btn-small">Zapisz imiona</button>`
+      : "";
+
+    const p = state.push || {};
+    let notif;
+    if (!p.supported) {
+      notif = `<p class="empty">${isIOS() && !isStandalone() ? "Na iPhonie dodaj appkę do ekranu głównego (Udostępnij → Do ekranu początkowego) i otwórz ją stamtąd. Dopiero wtedy da się włączyć powiadomienia." : "Ta przeglądarka nie obsługuje powiadomień."}</p>`;
+    } else if (!d?.pushPublicKey) {
+      notif = `<p class="empty">Powiadomienia będą dostępne po następnej synchronizacji (jednorazowo tworzy się klucz).</p>`;
+    } else if (p.permission === "denied") {
+      notif = `<p class="empty">Powiadomienia są zablokowane w ustawieniach przeglądarki lub telefonu. Odblokuj je i wróć tutaj.</p>`;
+    } else if (p.subscribed) {
+      notif = `<p class="empty" style="margin:0 0 8px"><span class="added">${icon("check")} Włączone na tym urządzeniu</span></p>
+        <div class="btnrow"><button id="push-test" class="btn btn-small btn-quiet2">Pokaż testowe</button><button id="push-off" class="btn btn-small btn-quiet2">Wyłącz</button></div>`;
+    } else {
+      notif = `<p class="empty" style="margin:0 0 8px">Dostaniesz alert o nowej ocenie, uwadze, nowym sprawdzianie oraz poranne i wieczorne podsumowanie.</p>
+        <button id="push-on" class="btn btn-small">${icon("bell")} Włącz powiadomienia</button>`;
+    }
+    return `<h2 class="sec">${icon("sliders")} Ustawienia</h2><div class="card">${names}<div class="fld-h" ${names ? 'style="margin-top:16px"' : ""}>${icon("bell")} Powiadomienia</div>${notif}</div>`;
   }
 
   // Średnia i ostatnie oceny na kaflu dziecka (pulpit).
@@ -887,11 +1167,11 @@
 
     const tiles = all.map(({ k, s }) => `
       <button class="tile c${k.idx}" data-goto="${esc(k.key)}">
-        <div class="tile-head"><span class="avatar">${esc((k.name || "?").charAt(0).toUpperCase())}</span><strong>${esc(k.name)}</strong><span class="chev" aria-hidden="true">›</span></div>
-        ${k.lastError ? `<p class="sum" style="color:var(--warn)">⚠ Nie udało się odświeżyć: ${esc(k.lastError)}</p>` : ""}
+        <div class="tile-head"><span class="avatar">${esc((k.name || "?").charAt(0).toUpperCase())}</span><strong>${esc(k.name)}</strong><span class="chev" aria-hidden="true">${icon("chevron")}</span></div>
+        ${k.lastError ? `<p class="sum" style="color:var(--warn)">${icon("alert")} Nie udało się odświeżyć: ${esc(k.lastError)}</p>` : ""}
         <p class="sum">${esc(k.summary || "Brak istotnych nowości.")}</p>
         ${gradeStrip(k)}
-        <div class="counts"><span>⭐ ${gradesOf(k).length ? recentGrades(gradesOf(k), 7).length : s.grades.length}</span><span>⚠️ ${s.remarks.length}</span><span>✉️ ${s.messages.length}</span><span>📅 ${s.events.length}</span>${k.wa ? `<span>💬 ${waRecent(k, 24).reduce((n, e) => n + (e.messageCount || 0), 0)}</span>` : ""}</div>
+        <div class="counts"><span title="nowe oceny">${icon("star")} ${gradesOf(k).length ? recentGrades(gradesOf(k), 7).length : s.grades.length}</span><span title="uwagi">${icon("alert")} ${s.remarks.length}</span><span title="wiadomości">${icon("mail")} ${s.messages.length}</span><span title="terminy">${icon("calendar")} ${s.events.length}</span>${k.wa ? `<span title="wiadomości z grupy (24 h)">${icon("chat")} ${waRecent(k, 24).reduce((n, e) => n + (e.messageCount || 0), 0)}</span>` : ""}</div>
       </button>`).join("");
 
     const evCard = events.length
@@ -899,15 +1179,18 @@
       : "";
 
     const today = todayISO();
-    return `${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    const sunday = new Date().getDay() === 0;
+    const week = weekCard(d, sunday);
+    return `${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
+      ${settingsCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
       <p class="empty" style="text-align:center;font-size:0.75rem">Wersja appki: ${BUILD}</p>`;
   }
 
-  function section(icon, title, count, body, emptyText, badgeText) {
+  function section(iconName, title, count, body, emptyText, badgeText) {
     return `<div class="card">
-      <div class="sect-title"><h3>${icon} ${title}</h3>${count > 0 ? `<span class="badge">${badgeText || count}</span>` : ""}</div>
+      <div class="sect-title"><h3>${icon(iconName)} ${title}</h3>${count > 0 ? `<span class="badge">${badgeText || count}</span>` : ""}</div>
       ${count > 0 ? `<ul class="rows">${body}</ul>` : `<p class="empty">${emptyText}</p>`}
     </div>`;
   }
@@ -934,7 +1217,7 @@
   }
 
   function whatsappSection(c, d) {
-    const title = `<h3>💬 WhatsApp${c.wa?.groupName ? ` <span class="sub">· ${esc(c.wa.groupName)}</span>` : ""}</h3>`;
+    const title = `<h3>${icon("chat")} WhatsApp${c.wa?.groupName ? ` <span class="sub">· ${esc(c.wa.groupName)}</span>` : ""}</h3>`;
     if (!c.wa) {
       const st = d?.whatsapp?.sync?.groups?.[c.key];
       const text = st === "ok" ? "Grupa jest podłączona i śledzona. Nie było jeszcze nowych wiadomości do streszczenia."
@@ -987,14 +1270,14 @@
 
     return `<div class="c${c.idx}">
       <div class="child-head"><span class="avatar">${esc((c.name || "?").charAt(0).toUpperCase())}</span>
-        <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}${c.extra?.luckyNumber != null ? ` · 🍀 numerek ${esc(c.extra.luckyNumber)}` : ""}</small></div></div>
+        <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}${c.extra?.luckyNumber != null ? ` · ${icon("sparkle")} numerek ${esc(c.extra.luckyNumber)}` : ""}</small></div></div>
       ${c.lastError ? `<div class="warnbox">Ostatnie odświeżenie się nie udało: ${esc(c.lastError)}. Widać dane z poprzedniej synchronizacji.</div>` : ""}
       ${c.summary ? `<div class="card"><p class="sum" style="margin:0">${esc(c.summary)}</p></div>` : ""}
       ${hasSections ? `
-        ${c.extra?.gradeList ? gradesSection(c) : section("⭐", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
-        ${section("⚠️", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
-        ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
-        ${section("✉️", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
+        ${c.extra?.gradeList ? gradesSection(c) : section("star", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
+        ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
+        ${section("calendar", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
+        ${section("mail", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
       ${extraSections(c, d)}
       ${whatsappSection(c, d)}
@@ -1011,11 +1294,12 @@
     const dueNow = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due <= todayISO()).length;
 
     $("#nav").innerHTML = `
-      <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">🏠</span>Pulpit</button>
-      <button data-goto="kalendarz" ${state.view === "kalendarz" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">📅</span>Kalendarz</button>
-      <button data-goto="todo" ${state.view === "todo" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">✅</span>Do zrobienia${dueNow ? `<span class="nb" aria-label="${dueNow} na dziś lub po terminie">${dueNow}</span>` : ""}</button>
+      <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("home")}</span>Pulpit</button>
+      <button data-goto="kalendarz" ${state.view === "kalendarz" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("calendar")}</span>Kalendarz</button>
+      <button data-goto="todo" ${state.view === "todo" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("check")}</span>Do zrobienia${dueNow ? `<span class="nb" aria-label="${dueNow} na dziś lub po terminie">${dueNow}</span>` : ""}</button>
       ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${esc((k.name || "?").charAt(0).toUpperCase())}</span>${esc(k.name)}</button>`).join("")}`;
 
+    $("#hero-date").textContent = new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
     const dot = $("#sync-dot"), text = $("#sync-text");
     if (d?.lastSync) {
       const time = fmtStamp(d.lastSync.timestamp);
@@ -1098,7 +1382,7 @@
     } catch (e) {
       toast(friendlyError(e), true);
       btn.disabled = false;
-      btn.textContent = "📅 Dodaj";
+      btn.innerHTML = `${icon("calplus")} Dodaj`;
     }
   }
 
@@ -1106,6 +1390,10 @@
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    if (e.target.closest("#save-names")) { saveNames(); return; }
+    if (e.target.closest("#push-on")) { enablePush(); return; }
+    if (e.target.closest("#push-off")) { disablePush(); return; }
+    if (e.target.closest("#push-test")) { testPush(); return; }
     const am = e.target.closest("[data-avg]");
     if (am) {
       avgMode = am.dataset.avg === "all" ? "all" : "librus";
@@ -1171,6 +1459,7 @@
         (err) => { $("#sync-dot").className = "dot error"; $("#sync-text").textContent = "Brak dostępu do danych: " + err.message; });
       unsubPrefs = onSnapshot(doc(db, "users", user.uid, "prefs", "state"), (snap) => {
         state.prefs = "ok";
+        state.names = (snap.exists() && snap.data().names) || {};
         if (snap.exists()) {
           remoteDone = new Set(arr(snap.data().done));
           try { localStorage.setItem("libapp_done", JSON.stringify([...remoteDone])); } catch {}
@@ -1188,7 +1477,8 @@
     }
   });
 
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").then(() => refreshPush()).catch(() => refreshPush());
+  else refreshPush();
 </script>
 </body>
 </html>

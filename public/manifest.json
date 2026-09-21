@@ -1,9 +1,17 @@
 {
   "name": "Podsumowanie dnia",
   "short_name": "Podsumowanie",
+  "description": "Librus i WhatsApp w jednym miejscu: oceny, terminy, zadania i przegląd tygodnia.",
+  "lang": "pl",
   "start_url": "./index.html",
+  "scope": "./",
   "display": "standalone",
-  "background_color": "#111116",
-  "theme_color": "#1a1a2e",
-  "icons": []
+  "orientation": "portrait",
+  "background_color": "#0f7286",
+  "theme_color": "#0f7286",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }
