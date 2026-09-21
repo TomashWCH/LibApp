@@ -1,16 +1,15 @@
 {
-  "name": "librus-whatsapp-module",
+  "name": "librus-whatsapp-sync",
   "version": "1.0.0",
   "private": true,
-  "description": "Moduł WhatsApp (etap 1: parowanie). Osobny package.json, żeby nie wpływał na synchronizację Librusa.",
+  "description": "Codzienna synchronizacja Librusa (i docelowo WhatsApp) z podsumowaniem AI, zapisywana do Firestore",
   "type": "module",
   "scripts": {
-    "pair": "node pair.js",
-    "sync": "node sync.js"
+    "sync": "node scripts/sync-librus.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "librus-api": "^2.13.3",
     "firebase-admin": "^12.1.0",
-    "pino": "^10.3.1"
+    "node-fetch": "^3.3.2"
   }
 }
