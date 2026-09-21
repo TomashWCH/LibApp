@@ -25,8 +25,8 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          LIBRUS_LOGIN_TOMEK: ${{ secrets.LIBRUS_LOGIN_TOMEK }}
-          LIBRUS_PASSWORD_TOMEK: ${{ secrets.LIBRUS_PASSWORD_TOMEK }}
-          LIBRUS_LOGIN_ZONA: ${{ secrets.LIBRUS_LOGIN_ZONA }}
-          LIBRUS_PASSWORD_ZONA: ${{ secrets.LIBRUS_PASSWORD_ZONA }}
+          LIBRUS_LOGIN_DZIECKO1: ${{ secrets.LIBRUS_LOGIN_DZIECKO1 }}
+          LIBRUS_PASSWORD_DZIECKO1: ${{ secrets.LIBRUS_PASSWORD_DZIECKO1 }}
+          LIBRUS_LOGIN_DZIECKO2: ${{ secrets.LIBRUS_LOGIN_DZIECKO2 }}
+          LIBRUS_PASSWORD_DZIECKO2: ${{ secrets.LIBRUS_PASSWORD_DZIECKO2 }}
         run: npm run sync
