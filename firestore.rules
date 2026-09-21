@@ -1,0 +1,18 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Każdy zalogowany użytkownik może czytać/pisać WYŁĄCZNIE swój własny dokument.
+    // Zapis do Firestore z GitHub Actions omija te reguły (klucz konta serwisowego
+    // ma pełne uprawnienia administracyjne) — te reguły chronią appkę od strony klienta.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false; // appka nie zapisuje bezpośrednio, tylko czyta
+
+      match /syncHistory/{docId} {
+        allow read: if request.auth != null && request.auth.uid == uid;
+        allow write: if false;
+      }
+    }
+  }
+}
