@@ -351,6 +351,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
+  const BUILD = "2026-09-21 · 4"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const TZ = "Europe/Warsaw";
   const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
   const $ = (sel) => document.querySelector(sel);
@@ -900,7 +901,8 @@
     const today = todayISO();
     return `${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
-      <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>`;
+      <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
+      <p class="empty" style="text-align:center;font-size:0.75rem">Wersja appki: ${BUILD}</p>`;
   }
 
   function section(icon, title, count, body, emptyText, badgeText) {
@@ -917,10 +919,18 @@
     if (!sy || !st) return "";
     const hint = st.seen === 0
       ? "Z tej grupy nic nowego nie przyszło od poprzedniego połączenia."
-      : st.text === 0
+      : st.cipher > 0 && st.text === 0
         ? `Wiadomości przyszły (${st.seen}), ale nie udało się ich odczytać. WhatsApp zwykle ponawia je przy kolejnej wiadomości w grupie.`
-        : `Odebrano wiadomości z treścią: ${st.text}.`;
-    return `<p class="empty" style="margin-top:8px">Ostatnie połączenie: ${esc(fmtStamp(sy.at))}. ${hint}</p>`;
+        : st.cipher > 0
+          ? `Odczytano ${st.text}, nie udało się odczytać ${st.cipher}.`
+          : `Odebrano wiadomości z treścią: ${st.text}.`;
+    // krótka historia ostatnich połączeń: godzina — odebrane (z treścią)
+    const hm = (ms) => new Date(ms).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+    const hist = arr(d?.whatsapp?.syncLog).slice(-4).map((e) => {
+      const x = e.stats?.[c.key];
+      return x ? `${hm(e.atMs)} — ${x.seen}${x.cipher ? ` (nieodczytane ${x.cipher})` : ""}` : null;
+    }).filter(Boolean);
+    return `<p class="empty" style="margin-top:8px">Ostatnie połączenie: ${esc(fmtStamp(sy.at))}. ${hint}</p>${hist.length > 1 ? `<p class="empty" style="font-size:0.78rem">Odebrane wiadomości w ostatnich połączeniach: ${esc(hist.join(" · "))}</p>` : ""}`;
   }
 
   function whatsappSection(c, d) {
