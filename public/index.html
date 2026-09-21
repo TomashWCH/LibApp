@@ -438,7 +438,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-21 · 8"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-21 · 9"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const TZ = "Europe/Warsaw";
   const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
   const $ = (sel) => document.querySelector(sel);
@@ -906,7 +906,7 @@
 
   function lessonsList(lessons) {
     return `<ul class="lessons">${lessons.map((l) => `<li><span class="nr">${esc(l.nr)}</span>
-      <div class="main"><b>${esc(l.title)}</b><small>${esc(l.time)}${l.flag ? `${l.time ? " · " : ""}<span class="flag">${esc(l.flag)}</span>` : ""}</small></div></li>`).join("")}</ul>`;
+      <div class="main"><b>${esc(l.title)}</b><small>${esc(l.time)}${l.teacher ? `${l.time ? " · " : ""}${esc(l.teacher)}` : ""}${l.room ? ` · sala ${esc(l.room)}` : ""}${l.flag ? `${l.time || l.teacher ? " · " : ""}<span class="flag">${esc(l.flag)}</span>` : ""}</small></div></li>`).join("")}</ul>`;
   }
 
   function dayCard(d, iso, label) {
