@@ -152,6 +152,16 @@
   .cal-day.sel .dot-c { background: var(--on-accent); }
   .legend { display: flex; gap: 16px; font-size: 0.82rem; color: var(--muted); margin: 12px 2px; flex-wrap: wrap; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .wa-entry { padding: 10px 0; border-top: 1px solid var(--line); }
+  .wa-entry:first-of-type { border-top: 0; }
+  .wa-entry small { color: var(--muted); font-size: 0.8rem; display: block; margin-bottom: 4px; }
+  .wa-entry p { white-space: pre-line; }
+  .wa-list { margin: 8px 0 0; padding-left: 18px; font-size: 0.92rem; }
+  .wa-list li { padding: 1px 0; }
+  .wa-list.todo { list-style: none; padding-left: 2px; }
+  .wa-list.todo li::before { content: "☐ "; color: var(--ch, var(--accent)); }
+  .wa-h { font-size: 0.78rem; font-weight: 700; color: var(--muted); margin-top: 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .sub { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
   .pair-code { font-size: 2rem; font-weight: 700; letter-spacing: 0.14em; text-align: center; font-variant-numeric: tabular-nums; padding: 14px 8px; margin: 10px 0; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line); user-select: all; }
   .wa-groups { margin: 8px 0 0; padding: 0; list-style: none; font-size: 0.9rem; color: var(--muted); }
   .wa-groups li { padding: 2px 0; }
@@ -302,12 +312,30 @@
     const map = d?.librus?.children || {};
     const order = arr(d?.librus?.childOrder).filter((k) => map[k]);
     for (const k of Object.keys(map)) if (!order.includes(k)) order.push(k);
-    return order.map((k, i) => ({ key: k, idx: i % 3, ...map[k] }));
+    const wa = d?.whatsapp?.summaries || {};
+    return order.map((k, i) => ({ key: k, idx: i % 3, ...map[k], wa: wa[k] || null }));
   }
+
+  // Terminy z Librusa + terminy wykryte w grupie WhatsApp (bez duplikatów).
+  function allEvents(c) {
+    const out = [...arr(c.sections?.events)];
+    const seen = new Set(out.map((e) => `${e.title}|${e.date}|${e.time || ""}`));
+    for (const en of arr(c.wa?.entries)) {
+      for (const ev of arr(en.events)) {
+        const key = `${ev.title}|${ev.date}|${ev.time || ""}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const note = ev.sourceNote && ev.sourceNote !== "WhatsApp" ? `WhatsApp: ${ev.sourceNote}` : "WhatsApp";
+        out.push({ ...ev, sourceNote: note });
+      }
+    }
+    return out;
+  }
+  const waRecent = (c, hours) => arr(c.wa?.entries).filter((e) => (e.atMs || 0) >= Date.now() - hours * 3600 * 1000);
   const sec = (c) => ({
     grades: arr(c.sections?.grades),
     remarks: arr(c.sections?.remarks),
-    events: arr(c.sections?.events).filter((e) => e.date && e.date >= todayISO()).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || ""))),
+    events: allEvents(c).filter((e) => e.date && e.date >= todayISO()).sort((a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || ""))),
     messages: arr(c.sections?.messages),
   });
 
@@ -327,6 +355,16 @@
     </li>`;
   }
 
+  function syncLine(d) {
+    const sy = d?.whatsapp?.sync;
+    const tracked = getChildren(d).filter((k) => k.wa).length;
+    if (!sy) return `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Podsumowania grup pojawią się po następnej synchronizacji (wymaga sekretu WHATSAPP_GROUPS).</p>`;
+    const when = fmtStamp(sy.at);
+    return sy.status === "ok"
+      ? `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Ostatnie odświeżenie: ${esc(when)} · śledzone grupy: ${tracked}</p>`
+      : `<div class="warnbox" style="margin-top:8px">Ostatnie odświeżenie grup (${esc(when)}) nie w pełni się udało: ${esc(sy.error || "nieznany błąd")}.</div>`;
+  }
+
   function whatsappCard(d) {
     const w = d?.whatsapp;
     const how = "WhatsApp → Ustawienia → Połączone urządzenia → Połącz urządzenie → Połącz za pomocą numeru telefonu";
@@ -343,8 +381,8 @@
     } else if (w.status === "paired") {
       const groups = arr(w.groups);
       body = `<p><span class="added">✓ Połączono</span> · grup: ${groups.length}</p>
-        ${groups.length ? `<ul class="wa-groups">${groups.slice(0, 10).map((g) => `<li>${esc(g.name)}</li>`).join("")}${groups.length > 10 ? `<li>…i ${groups.length - 10} więcej</li>` : ""}</ul>` : ""}
-        <p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Wybór grup do podsumowań dodamy w następnym kroku.</p>`;
+        ${groups.length ? `<ul class="wa-groups">${groups.slice(0, 40).map((g) => `<li>${esc(g.name)}</li>`).join("")}${groups.length > 40 ? `<li>…i ${groups.length - 40} więcej</li>` : ""}</ul>` : ""}
+        ${syncLine(d)}`;
     } else {
       body = `<div class="warnbox">Parowanie się nie udało: ${esc(String(w.error || "nieznany błąd").replace(/\.$/, ""))}. Uruchom Sparuj WhatsApp jeszcze raz.</div>`;
     }
@@ -358,7 +396,7 @@
     // terminy wszystkich dzieci pogrupowane po dniu (bez odfiltrowywania przeszłości)
     const byDay = new Map();
     for (const k of kids) {
-      for (const ev of arr(k.sections?.events)) {
+      for (const ev of allEvents(k)) {
         if (!isoDate.test(ev.date || "")) continue;
         if (!byDay.has(ev.date)) byDay.set(ev.date, []);
         byDay.get(ev.date).push({ ev, k });
@@ -426,7 +464,7 @@
         <div class="tile-head"><span class="avatar">${esc((k.name || "?").charAt(0).toUpperCase())}</span><strong>${esc(k.name)}</strong><span class="chev" aria-hidden="true">›</span></div>
         ${k.lastError ? `<p class="sum" style="color:var(--warn)">⚠ Nie udało się odświeżyć: ${esc(k.lastError)}</p>` : ""}
         <p class="sum">${esc(k.summary || "Brak istotnych nowości.")}</p>
-        <div class="counts"><span>⭐ ${s.grades.length}</span><span>⚠️ ${s.remarks.length}</span><span>✉️ ${s.messages.length}</span><span>📅 ${s.events.length}</span></div>
+        <div class="counts"><span>⭐ ${s.grades.length}</span><span>⚠️ ${s.remarks.length}</span><span>✉️ ${s.messages.length}</span><span>📅 ${s.events.length}</span>${k.wa ? `<span>💬 ${waRecent(k, 24).reduce((n, e) => n + (e.messageCount || 0), 0)}</span>` : ""}</div>
       </button>`).join("");
 
     const evCard = events.length
@@ -443,6 +481,31 @@
       <div class="sect-title"><h3>${icon} ${title}</h3>${count > 0 ? `<span class="badge">${badgeText || count}</span>` : ""}</div>
       ${count > 0 ? `<ul class="rows">${body}</ul>` : `<p class="empty">${emptyText}</p>`}
     </div>`;
+  }
+
+  function whatsappSection(c) {
+    const title = `<h3>💬 WhatsApp${c.wa?.groupName ? ` <span class="sub">· ${esc(c.wa.groupName)}</span>` : ""}</h3>`;
+    if (!c.wa) {
+      return `<div class="card"><div class="sect-title">${title}</div><p class="empty">Grupa nie jest jeszcze podłączona albo czeka na pierwszą synchronizację.</p></div>`;
+    }
+    const entries = waRecent(c, 48).sort((a, b) => b.atMs - a.atMs);
+    const dayName = (ms) => {
+      const d = new Date(ms), n = new Date();
+      const same = (a, b) => a.toDateString() === b.toDateString();
+      const y = new Date(n); y.setDate(n.getDate() - 1);
+      const hm = d.toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit" });
+      return same(d, n) ? `dziś ${hm}` : same(d, y) ? `wczoraj ${hm}` : `${d.toLocaleDateString("pl-PL", { day: "numeric", month: "short" })} ${hm}`;
+    };
+    const body = entries.map((e) => {
+      const hl = arr(e.highlights), todo = arr(e.todo);
+      return `<div class="wa-entry"><small>${esc(dayName(e.atMs))} · ${e.messageCount || 0} wiad.</small>
+        <p>${esc(e.summary || "Brak istotnych informacji.")}</p>
+        ${hl.length ? `<ul class="wa-list">${hl.map((h) => `<li>${esc(h)}</li>`).join("")}</ul>` : ""}
+        ${todo.length ? `<div class="wa-h">Do zrobienia</div><ul class="wa-list todo">${todo.map((t) => `<li>${esc(t.text)}${t.due ? ` <span class="sub">(do ${fmtDate(t.due)})</span>` : ""}</li>`).join("")}</ul>` : ""}
+      </div>`;
+    }).join("");
+    return `<div class="card"><div class="sect-title">${title}${entries.length ? `<span class="badge">${entries.length}</span>` : ""}</div>
+      ${entries.length ? body : `<p class="empty">Brak nowych wiadomości w grupie z ostatnich 48 godzin.</p>`}</div>`;
   }
 
   function viewChild(d, key) {
@@ -478,6 +541,7 @@
         ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
         ${section("✉️", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
+      ${whatsappSection(c)}
     </div>`;
   }
 
