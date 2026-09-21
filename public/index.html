@@ -25,6 +25,7 @@
     --c0: #0d7c86; --c0-soft: #d9eef0;
     --c1: #8a3a72; --c1-soft: #f2e0ec;
     --c2: #b26a00; --c2-soft: #f7e8cc;
+    --g4: #2563b8; --g4-soft: #dbe8fb;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -44,6 +45,7 @@
       --c0: #4cc3cf; --c0-soft: #17393d;
       --c1: #e08fc4; --c1-soft: #3a2133;
       --c2: #f0b04a; --c2-soft: #3a2c12;
+      --g4: #7db2ff; --g4-soft: #1b2c47;
     }
   }
   * { box-sizing: border-box; }
@@ -174,6 +176,40 @@
   ul.lessons .flag { color: var(--warn); font-weight: 600; }
   .lucky { margin-top: 10px; font-size: 0.9rem; color: var(--muted); }
   .nb { position: absolute; top: 2px; left: calc(50% + 6px); background: var(--err); color: #fff; font-size: 0.65rem; font-weight: 700; border-radius: 999px; min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; }
+  /* oceny */
+  .gc { font-style: normal; font-size: 0.78rem; font-weight: 700; min-width: 26px; text-align: center; padding: 2px 6px; border-radius: 8px; display: inline-block; font-variant-numeric: tabular-nums; }
+  .gc.g5 { background: var(--ok-soft); color: var(--ok); }
+  .gc.g4 { background: var(--g4-soft); color: var(--g4); }
+  .gc.g3 { background: var(--warn-soft); color: var(--warn); }
+  .gc.g2 { background: var(--err-soft); color: var(--err); }
+  .gc.g0 { background: var(--line); color: var(--muted); }
+  .gc.new { box-shadow: 0 0 0 2px var(--ch, var(--accent)); }
+  .gc.fin { border: 1px dashed currentColor; }
+  .avg-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+  .avg-head .big { font-size: 2.1rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .avg-head small { color: var(--muted); }
+  .delta.up { color: var(--ok); } .delta.down { color: var(--err); }
+  .delta { font-size: 0.8rem; font-weight: 600; }
+  .seg { display: flex; gap: 6px; margin: 10px 0 4px; flex-wrap: wrap; }
+  .seg button { background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 0.8rem; cursor: pointer; color: var(--muted); }
+  .seg button.on { background: var(--ch-soft); color: var(--ch); border-color: transparent; font-weight: 700; }
+  svg.chart { width: 100%; height: auto; display: block; }
+  svg.chart .grid { stroke: var(--line); stroke-width: 1; }
+  svg.chart .lbl { fill: var(--muted); font-size: 10px; }
+  svg.chart .line { fill: none; stroke: var(--ch, var(--accent)); stroke-width: 2.5; stroke-linejoin: round; stroke-linecap: round; }
+  svg.chart .pt { fill: var(--card); stroke: var(--ch, var(--accent)); stroke-width: 2; }
+  svg.chart .pt.last { fill: var(--ch, var(--accent)); }
+  svg.chart .val { fill: var(--ink); font-size: 11px; font-weight: 700; }
+  details.subj { border-top: 1px solid var(--line); }
+  details.subj > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+  details.subj > summary::-webkit-details-marker { display: none; }
+  details.subj .sn { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+  details.subj .sa { min-width: 58px; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+  details.subj .sg { display: flex; gap: 3px; flex-wrap: wrap; justify-content: flex-end; max-width: 45%; }
+  details.subj ul.rows { padding-bottom: 6px; }
+  .newstrip { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 8px 0 2px; font-size: 0.85rem; color: var(--muted); }
+  .tile-grades { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+  .avgbadge { font-size: 0.85rem; font-weight: 700; background: var(--ch-soft); color: var(--ch); padding: 3px 10px; border-radius: 999px; font-variant-numeric: tabular-nums; }
   .pair-code { font-size: 2rem; font-weight: 700; letter-spacing: 0.14em; text-align: center; font-variant-numeric: tabular-nums; padding: 14px 8px; margin: 10px 0; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line); user-select: all; }
   .wa-groups { margin: 8px 0 0; padding: 0; list-style: none; font-size: 0.9rem; color: var(--muted); }
   .wa-groups li { padding: 2px 0; }
@@ -233,7 +269,7 @@
     getAuth, GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup, signOut, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
   import {
-    getFirestore, doc, onSnapshot
+    getFirestore, doc, onSnapshot, setDoc
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -309,7 +345,7 @@
 
   // ---------- stan ----------
   const now0 = new Date();
-  const state = { data: null, view: "pulpit", cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
+  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -369,8 +405,8 @@
 
   function syncLine(d) {
     const sy = d?.whatsapp?.sync;
-    const tracked = sy.groups ? Object.values(sy.groups).filter((v) => v === "ok").length : getChildren(d).filter((k) => k.wa).length;
     if (!sy) return `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Podsumowania grup pojawią się po następnej synchronizacji (wymaga sekretu WHATSAPP_GROUPS).</p>`;
+    const tracked = sy.groups ? Object.values(sy.groups).filter((v) => v === "ok").length : getChildren(d).filter((k) => k.wa).length;
     const when = fmtStamp(sy.at);
     const st = sy.stats ? Object.values(sy.stats).reduce((a, x) => ({ seen: a.seen + (x.seen || 0), text: a.text + (x.text || 0) }), { seen: 0, text: 0 }) : null;
     const recv = st ? ` · odebrano wiadomości: ${st.seen} (z treścią: ${st.text})${sy.unresolved > 0 ? `, nieodszyfrowane: ${sy.unresolved}` : ""}` : "";
@@ -463,6 +499,117 @@
       <div class="card">${list.length ? `<ul class="rows">${list.map((x) => (x.todo ? todoRow(x.todo, false, false) : eventRow(x.ev, x.k, true))).join("")}</ul>` : `<p class="empty">Brak terminów tego dnia.</p>`}</div>`;
   }
 
+  // Ikony: w kolejnej paczce zostaną zastąpione zestawem SVG; na razie emotikony.
+  const ICONS = { star: "⭐" };
+  const icon = (name) => ICONS[name] || "";
+
+  // ---------- oceny: średnie, wykres ----------
+  const MONTHS = ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"];
+  const curSem = () => { const m = new Date().getMonth() + 1; return m >= 2 && m <= 8 ? 2 : 1; };
+  const gradesOf = (c) => arr(c.extra?.gradeList);
+  const inScope = (g, sem) => sem === "all" || g.sem === 0 || g.sem === (sem === "cur" ? curSem() : Number(sem));
+  const countable = (g) => !g.final && g.inAvg !== false && g.num != null;
+  const fmtAvg = (v) => (v == null ? "–" : v.toFixed(2).replace(".", ","));
+  const gcls = (g) => (g.base >= 5 ? "g5" : g.base === 4 ? "g4" : g.base === 3 ? "g3" : g.base ? "g2" : "g0");
+  const avgCls = (v) => (v == null ? "g0" : v >= 4.75 ? "g5" : v >= 3.75 ? "g4" : v >= 2.75 ? "g3" : "g2");
+
+  function wavg(list) {
+    let sw = 0, sum = 0;
+    for (const g of list) {
+      if (!countable(g)) continue;
+      const w = g.weight || 1;
+      sw += w; sum += g.num * w;
+    }
+    return sw ? sum / sw : null;
+  }
+  function bySubject(list) {
+    const m = new Map();
+    for (const g of list) { if (!m.has(g.subject)) m.set(g.subject, []); m.get(g.subject).push(g); }
+    return m;
+  }
+  // średnia ze średnich przedmiotów, uwzględniająca oceny do wskazanej daty
+  function overallAt(list, iso) {
+    const avgs = [...bySubject(list.filter((g) => g.date && g.date <= iso)).values()].map(wavg).filter((v) => v != null);
+    return avgs.length ? avgs.reduce((a, b) => a + b, 0) / avgs.length : null;
+  }
+  function overallSeries(list) {
+    const dates = [...new Set(list.filter((g) => countable(g) && g.date).map((g) => g.date))].sort();
+    return dates.map((date) => ({ date, v: overallAt(list, date) })).filter((p) => p.v != null);
+  }
+  const recentGrades = (list, days) => list.filter((g) => !g.final && g.date && g.date >= shiftISO(todayISO(), -days));
+
+  function gradeChip(g, extraCls = "") {
+    const title = [g.category, g.date && fmtDate(g.date), g.weight && `waga ${g.weight}`].filter(Boolean).join(" · ");
+    return `<i class="gc ${gcls(g)}${g.final ? " fin" : ""} ${extraCls}" title="${esc(title)}">${g.final ? "★ " : ""}${esc(g.value)}</i>`;
+  }
+  const trendArrow = (delta) => (delta == null || Math.abs(delta) < 0.05 ? "" : delta > 0 ? `<span class="delta up" aria-label="rośnie">▲</span>` : `<span class="delta down" aria-label="spada">▼</span>`);
+
+  function gradeChart(series, label) {
+    if (series.length === 0) return `<p class="empty">Brak ocen liczonych do średniej w tym okresie.</p>`;
+    const W = 360, H = 150, L = 28, R = 14, T = 16, B = 24;
+    const ts = series.map((p) => Date.parse(p.date + "T12:00:00"));
+    const tMin = ts[0], tMax = ts[ts.length - 1];
+    const vals = series.map((p) => p.v);
+    let lo = Math.max(1, Math.floor(Math.min(...vals) - 0.4));
+    let hi = Math.min(6, Math.max(Math.ceil(Math.max(...vals) + 0.4), lo + 1));
+    const x = (t) => (tMax === tMin ? (L + W - R) / 2 : L + ((t - tMin) / (tMax - tMin)) * (W - L - R));
+    const y = (v) => T + ((hi - v) / (hi - lo)) * (H - T - B);
+    let grid = "";
+    for (let g = lo; g <= hi; g++) grid += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}"/><text class="lbl" x="${L - 6}" y="${y(g) + 3}" text-anchor="end">${g}</text>`;
+    const pts = series.map((p, i) => `${x(ts[i]).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+    const dots = series.map((p, i) => `<circle class="pt${i === series.length - 1 ? " last" : ""}" cx="${x(ts[i]).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="${i === series.length - 1 ? 5 : 3}"/>`).join("");
+    const lastX = x(ts[ts.length - 1]), lastY = y(vals[vals.length - 1]);
+    // etykiety osi X: początki miesięcy (albo pierwsza i ostatnia data, gdy zakres jest krótki)
+    let xl = "";
+    const d0 = new Date(tMin), d1 = new Date(tMax);
+    const months = [];
+    for (let d = new Date(d0.getFullYear(), d0.getMonth() + 1, 1); d <= d1; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) months.push(d);
+    if (months.length >= 1) {
+      const step = Math.ceil(months.length / 6);
+      months.forEach((d, i) => { if (i % step === 0) xl += `<text class="lbl" x="${x(d.getTime())}" y="${H - 6}" text-anchor="middle">${MONTHS[d.getMonth()]}</text>`; });
+    } else {
+      const f = (d) => `${d.getDate()}.${pad(d.getMonth() + 1)}`;
+      xl = `<text class="lbl" x="${x(tMin)}" y="${H - 6}" text-anchor="${tMin === tMax ? "middle" : "start"}">${f(d0)}</text>` + (tMax !== tMin ? `<text class="lbl" x="${x(tMax)}" y="${H - 6}" text-anchor="end">${f(d1)}</text>` : "");
+    }
+    return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">${grid}<polyline class="line" points="${pts}"/>${dots}<text class="val" x="${Math.min(lastX, W - 18)}" y="${Math.max(lastY - 9, 11)}" text-anchor="middle">${fmtAvg(vals[vals.length - 1])}</text>${xl}</svg>`;
+  }
+
+  function gradesSection(c) {
+    if (!c.extra?.gradeList) return "";
+    const all = gradesOf(c);
+    const eff = state.gradeSem === "cur" ? String(curSem()) : state.gradeSem;
+    const scoped = all.filter((g) => inScope(g, state.gradeSem));
+    const today = todayISO();
+    const series = overallSeries(scoped);
+    const cur = overallAt(scoped, today);
+    const prev = overallAt(scoped, shiftISO(today, -30));
+    const delta = cur != null && prev != null ? cur - prev : null;
+    const fresh = recentGrades(all, 7).sort((a, b) => b.date.localeCompare(a.date));
+
+    const subjects = [...bySubject(scoped).entries()].sort((a, b) => a[0].localeCompare(b[0], "pl")).map(([name, list]) => {
+      const avg = wavg(list);
+      const before = wavg(list.filter((g) => g.date && g.date <= shiftISO(today, -30)));
+      const chips = list.slice(-8).map((g) => gradeChip(g, g.date && g.date >= shiftISO(today, -7) && !g.final ? "new" : "")).join("");
+      const rows = list.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((g) => `<li>
+        ${gradeChip(g)}<div class="main"><b>${esc(g.category || (g.final ? "Ocena końcowa" : "Ocena"))}</b>
+        <small>${fmtDate(g.date)}${g.weight ? ` · waga ${g.weight}` : ""}${g.inAvg === false ? " · nie liczy się do średniej" : ""}${g.teacher ? " · " + esc(g.teacher) : ""}${g.comment ? "<br>" + esc(g.comment) : ""}</small></div></li>`).join("");
+      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa">${fmtAvg(avg)} ${trendArrow(avg != null && before != null ? avg - before : null)}</span><span class="sg">${chips}</span></summary><ul class="rows">${rows}</ul></details>`;
+    }).join("");
+
+    const seg = [["1", "Semestr I"], ["2", "Semestr II"], ["all", "Cały rok"]]
+      .map(([k, l]) => `<button data-gsem="${k}" class="${eff === k ? "on" : ""}" aria-pressed="${eff === k}">${l}</button>`).join("");
+    const deltaHtml = delta == null || Math.abs(delta) < 0.005 ? "" : `<span class="delta ${delta > 0 ? "up" : "down"}">${delta > 0 ? "▲" : "▼"} ${fmtAvg(Math.abs(delta))} w ostatnich 30 dniach</span>`;
+
+    return `<div class="card">
+      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia ważona ze średnich przedmiotów</small></div>
+        <div style="text-align:right"><div class="big">${fmtAvg(cur)}</div>${deltaHtml}</div></div>
+      ${fresh.length ? `<div class="newstrip">Nowe (7 dni):${fresh.slice(0, 8).map((g) => `<span>${esc(g.subject.slice(0, 4))}. ${gradeChip(g, "new")}</span>`).join("")}</div>` : ""}
+      <div class="seg">${seg}</div>
+      ${gradeChart(series, `Wykres średniej: ${series.length ? fmtAvg(series[series.length - 1].v) : "brak danych"}`)}
+      ${subjects || `<p class="empty">Brak ocen w wybranym okresie.</p>`}
+    </div>`;
+  }
+
   // ---------- zadania, plan lekcji, "Dziś i jutro" ----------
   const shiftISO = (iso, n) => {
     const [y, m, dd] = iso.split("-").map(Number);
@@ -473,11 +620,30 @@
     const [y, m, dd] = iso.split("-").map(Number);
     return new Date(y, m - 1, dd).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
   };
-  function loadDone() {
+  // Odhaczone zadania: źródłem prawdy jest Firestore (users/{uid}/prefs/state), a gdy reguły
+  // tego nie pozwalają — pamięć przeglądarki.
+  let remoteDone = null;
+  let prefsWarned = false;
+  function localDone() {
     try { return new Set(JSON.parse(localStorage.getItem("libapp_done") || "[]")); } catch { return new Set(); }
   }
+  const prefsRef = () => (auth.currentUser ? doc(db, "users", auth.currentUser.uid, "prefs", "state") : null);
+  function pushDone(ids) {
+    const ref = prefsRef();
+    if (!ref) return;
+    setDoc(ref, { done: ids, updatedAt: Date.now() }, { merge: true }).catch(() => {
+      state.prefs = "error";
+      remoteDone = null;
+      if (!prefsWarned) { prefsWarned = true; toast("Nie udało się zapisać odhaczeń w chmurze. Zaktualizuj reguły Firestore.", true); }
+      render();
+    });
+  }
+  function loadDone() { return remoteDone ?? localDone(); }
   function saveDone(set) {
-    try { localStorage.setItem("libapp_done", JSON.stringify([...set].slice(-400))); } catch {}
+    const ids = [...set].slice(-400);
+    try { localStorage.setItem("libapp_done", JSON.stringify(ids)); } catch {}
+    remoteDone = new Set(ids);
+    pushDone(ids);
   }
 
   // Wszystko "do zrobienia": zadania wykryte w grupach WhatsApp + zadania domowe z Librusa.
@@ -573,7 +739,7 @@
       ? `<details class="card plan"><summary>Zrobione · ${closed.length}</summary><ul class="rows">${closed.map((t) => todoRow(t, true, false)).join("")}</ul></details>`
       : "";
     return `${html || `<div class="card"><p class="empty">Nic do zrobienia. Zadania z grup WhatsApp i zadania domowe z Librusa pojawią się tutaj.</p></div>`}${closedHtml}
-      <p class="empty" style="margin-top:12px">Odhaczone zadania zapamiętuje ta przeglądarka na tym urządzeniu.</p>`;
+      <p class="empty" style="margin-top:12px">${state.prefs === "ok" ? "Odhaczone zadania synchronizują się między Twoimi urządzeniami." : state.prefs === "error" ? "Synchronizacja odhaczeń jest wyłączona (reguły Firestore nie pozwalają na zapis). Odhaczenia zapamiętuje ta przeglądarka." : ""}</p>`;
   }
 
   // Zadania domowe i plan lekcji w widoku dziecka.
@@ -591,32 +757,41 @@
       <div class="card"><div class="sect-title"><h3>🎒 Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>`;
   }
 
+  // Średnia i ostatnie oceny na kaflu dziecka (pulpit).
+  function gradeStrip(k) {
+    const all = gradesOf(k);
+    if (!all.length) return "";
+    const today = todayISO();
+    const scoped = all.filter((g) => inScope(g, "cur"));
+    const avg = overallAt(scoped, today);
+    const prev = overallAt(scoped, shiftISO(today, -30));
+    const latest = recentGrades(all, 7).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
+    return `<div class="tile-grades c${k.idx}">
+      ${avg != null ? `<span class="avgbadge">śr. ${fmtAvg(avg)} ${prev != null ? trendArrow(avg - prev) : ""}</span>` : ""}
+      ${latest.map((g) => `<span style="font-size:0.8rem;color:var(--muted)">${esc(g.subject.slice(0, 3))}. ${gradeChip(g, "new")}</span>`).join("")}
+    </div>`;
+  }
+
   function viewPulpit(d) {
     const kids = getChildren(d);
     if (kids.length === 0) {
       return `<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>${whatsappCard(d)}`;
     }
     const all = kids.map((k) => ({ k, s: sec(k) }));
-    const total = (f) => all.reduce((n, x) => n + f(x.s), 0);
     const events = all
       .flatMap(({ k, s }) => s.events.map((ev) => ({ ev, k })))
       .filter(({ ev }) => ev.date > shiftISO(todayISO(), 1))
       .sort((a, b) => (a.ev.date + (a.ev.time || "")).localeCompare(b.ev.date + (b.ev.time || "")))
       .slice(0, 8);
 
-    const stats = `<div class="stats">
-      <div class="stat"><b>${total((s) => s.grades.length)}</b><span>oceny</span></div>
-      <div class="stat"><b>${total((s) => s.remarks.length)}</b><span>uwagi</span></div>
-      <div class="stat"><b>${total((s) => s.messages.length)}</b><span>wiadomości</span></div>
-      <div class="stat"><b>${total((s) => s.events.length)}</b><span>terminy</span></div>
-    </div>`;
 
     const tiles = all.map(({ k, s }) => `
       <button class="tile c${k.idx}" data-goto="${esc(k.key)}">
         <div class="tile-head"><span class="avatar">${esc((k.name || "?").charAt(0).toUpperCase())}</span><strong>${esc(k.name)}</strong><span class="chev" aria-hidden="true">›</span></div>
         ${k.lastError ? `<p class="sum" style="color:var(--warn)">⚠ Nie udało się odświeżyć: ${esc(k.lastError)}</p>` : ""}
         <p class="sum">${esc(k.summary || "Brak istotnych nowości.")}</p>
-        <div class="counts"><span>⭐ ${s.grades.length}</span><span>⚠️ ${s.remarks.length}</span><span>✉️ ${s.messages.length}</span><span>📅 ${s.events.length}</span>${k.wa ? `<span>💬 ${waRecent(k, 24).reduce((n, e) => n + (e.messageCount || 0), 0)}</span>` : ""}</div>
+        ${gradeStrip(k)}
+        <div class="counts"><span>⭐ ${gradesOf(k).length ? recentGrades(gradesOf(k), 7).length : s.grades.length}</span><span>⚠️ ${s.remarks.length}</span><span>✉️ ${s.messages.length}</span><span>📅 ${s.events.length}</span>${k.wa ? `<span>💬 ${waRecent(k, 24).reduce((n, e) => n + (e.messageCount || 0), 0)}</span>` : ""}</div>
       </button>`).join("");
 
     const evCard = events.length
@@ -624,7 +799,7 @@
       : "";
 
     const today = todayISO();
-    return `${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${stats}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    return `${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>`;
   }
@@ -694,7 +869,7 @@
       ${c.lastError ? `<div class="warnbox">Ostatnie odświeżenie się nie udało: ${esc(c.lastError)}. Widać dane z poprzedniej synchronizacji.</div>` : ""}
       ${c.summary ? `<div class="card"><p class="sum" style="margin:0">${esc(c.summary)}</p></div>` : ""}
       ${hasSections ? `
-        ${section("⭐", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
+        ${c.extra?.gradeList ? gradesSection(c) : section("⭐", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
         ${section("⚠️", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
         ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
         ${section("✉️", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
@@ -809,6 +984,8 @@
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    const gs = e.target.closest("[data-gsem]");
+    if (gs) { state.gradeSem = gs.dataset.gsem; render(); return; }
     const dn = e.target.closest("[data-done]");
     if (dn) {
       const set = loadDone();
@@ -850,8 +1027,12 @@
   });
 
   let unsubscribe = null;
+  let unsubPrefs = null;
   onAuthStateChanged(auth, (user) => {
     if (unsubscribe) unsubscribe();
+    if (unsubPrefs) unsubPrefs();
+    remoteDone = null;
+    state.prefs = "pending";
     if (user) {
       $("#login-screen").style.display = "none";
       $("#app-screen").style.display = "block";
@@ -859,6 +1040,17 @@
       // user.uid musi być wpisany do scripts/users.config.json (firestoreUid)
       unsubscribe = onSnapshot(doc(db, "users", user.uid), (snap) => { state.data = snap.data() || null; render(); },
         (err) => { $("#sync-dot").className = "dot error"; $("#sync-text").textContent = "Brak dostępu do danych: " + err.message; });
+      unsubPrefs = onSnapshot(doc(db, "users", user.uid, "prefs", "state"), (snap) => {
+        state.prefs = "ok";
+        if (snap.exists()) {
+          remoteDone = new Set(arr(snap.data().done));
+          try { localStorage.setItem("libapp_done", JSON.stringify([...remoteDone])); } catch {}
+        } else {
+          remoteDone = localDone(); // pierwsze połączenie: przenosimy odhaczenia z tej przeglądarki
+          if (remoteDone.size) pushDone([...remoteDone]);
+        }
+        render();
+      }, () => { state.prefs = "error"; remoteDone = null; render(); });
       render();
     } else {
       $("#login-screen").style.display = "block";
