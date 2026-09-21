@@ -35,7 +35,7 @@ const { users } = JSON.parse(readFileSync(usersConfigPath, "utf-8"));
 
 // ---------- Gemini ----------
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-2.0-flash"; // szybki i mieści się w darmowym limicie
+const GEMINI_MODEL = "gemini-3.1-flash-lite";
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
 async function summarizeWithGemini(rawData) {
