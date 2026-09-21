@@ -485,10 +485,15 @@
     </div>`;
   }
 
-  function whatsappSection(c) {
+  function whatsappSection(c, d) {
     const title = `<h3>💬 WhatsApp${c.wa?.groupName ? ` <span class="sub">· ${esc(c.wa.groupName)}</span>` : ""}</h3>`;
     if (!c.wa) {
-      return `<div class="card"><div class="sect-title">${title}</div><p class="empty">Grupa nie jest jeszcze podłączona albo czeka na pierwszą synchronizację.</p></div>`;
+      const st = d?.whatsapp?.sync?.groups?.[c.key];
+      const text = st === "ok" ? "Grupa jest podłączona i śledzona. Nie było jeszcze nowych wiadomości do streszczenia."
+        : st === "not_found" ? "Nie znaleziono grupy o nazwie z sekretu WHATSAPP_GROUPS. Porównaj nazwę z listą grup na karcie WhatsApp na pulpicie."
+        : st === "error" ? "Nie udało się streścić wiadomości z grupy. Spróbuję przy następnej synchronizacji."
+        : "Grupa nie jest jeszcze podłączona albo czeka na pierwszą synchronizację.";
+      return `<div class="card"><div class="sect-title">${title}</div><p class="empty">${text}</p></div>`;
     }
     const entries = waRecent(c, 48).sort((a, b) => b.atMs - a.atMs);
     const dayName = (ms) => {
@@ -543,7 +548,7 @@
         ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
         ${section("✉️", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
-      ${whatsappSection(c)}
+      ${whatsappSection(c, d)}
     </div>`;
   }
 
