@@ -57,7 +57,40 @@ function normalizeDay(text) {
 // ---------- Gemini ----------
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite"; // nazwę można zmienić tu albo zmienną GEMINI_MODEL
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+// Model zapasowy — używany, gdy główny jest przeciążony mimo ponowień (503/429/5xx).
+const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-2.5-flash";
+const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
+const RETRY_DELAYS_MS = [5000, 15000, 30000]; // 4 próby: od razu, po 5 s, 15 s, 30 s
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Wywołuje Gemini; przy chwilowych błędach (np. 503 "high demand") ponawia z przerwami.
+async function callGemini(model, prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+  for (let attempt = 0; ; attempt++) {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      }),
+    });
+    if (response.ok) return response.json();
+
+    const body = await response.text();
+    if (RETRY_STATUS.has(response.status) && attempt < RETRY_DELAYS_MS.length) {
+      const wait = RETRY_DELAYS_MS[attempt];
+      console.warn(
+        `  ! Gemini (${model}) odpowiedział ${response.status} — ponawiam za ${wait / 1000} s (${attempt + 1}/${RETRY_DELAYS_MS.length})`
+      );
+      await sleep(wait);
+      continue;
+    }
+    const err = new Error(`Gemini API error (${model}): ${response.status} ${body}`);
+    err.status = response.status;
+    throw err;
+  }
+}
 
 function toText(value) {
   if (Array.isArray(value)) return value.join("\n");
@@ -139,20 +172,19 @@ Dane wejściowe:
 ${JSON.stringify(rawData)}
 `.trim();
 
-  const response = await fetch(GEMINI_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Gemini API error: ${response.status} ${await response.text()}`);
+  let data;
+  try {
+    data = await callGemini(GEMINI_MODEL, prompt);
+  } catch (err) {
+    const canFallback =
+      GEMINI_FALLBACK_MODEL &&
+      GEMINI_FALLBACK_MODEL !== GEMINI_MODEL &&
+      RETRY_STATUS.has(err.status);
+    if (!canFallback) throw err;
+    console.warn(`  ! Przełączam na model zapasowy: ${GEMINI_FALLBACK_MODEL}`);
+    data = await callGemini(GEMINI_FALLBACK_MODEL, prompt);
   }
 
-  const data = await response.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error("Pusta odpowiedź z Gemini");
 
