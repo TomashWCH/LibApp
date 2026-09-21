@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Podsumowanie dnia</title>
+<link rel="manifest" href="manifest.json" />
+<meta name="theme-color" content="#1a1a2e" />
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --text: #1a1a2e;
+    --muted: #6b7280;
+    --accent: #4f46e5;
+    --ok: #16a34a;
+    --err: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111116;
+      --card: #1c1c24;
+      --text: #f0f0f5;
+      --muted: #9ca3af;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  header {
+    padding: 20px 16px 8px;
+  }
+  header h1 { font-size: 1.3rem; margin: 0; }
+  main { padding: 0 16px 40px; max-width: 640px; margin: 0 auto; }
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .sync-status { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.ok { background: var(--ok); }
+  .dot.error { background: var(--err); }
+  .dot.pending { background: var(--muted); }
+  button {
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 1rem;
+    width: 100%;
+    cursor: pointer;
+  }
+  #login-screen { text-align: center; padding-top: 60px; }
+  #app-screen { display: none; }
+  ul { padding-left: 20px; margin: 8px 0; }
+  .event-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-top: 1px solid rgba(128,128,128,0.15);
+  }
+  .event-item button {
+    width: auto;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+  }
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <h1>Podsumowanie dnia</h1>
+  <p style="color: var(--muted)">Librus i WhatsApp w jednym miejscu</p>
+  <button id="login-btn" style="max-width: 260px; margin: 20px auto;">Zaloguj się przez Google</button>
+</div>
+
+<div id="app-screen">
+  <header>
+    <h1 id="greeting">Cześć!</h1>
+    <div class="sync-status">
+      <span class="dot pending" id="sync-dot"></span>
+      <span id="sync-text">Wczytywanie...</span>
+    </div>
+  </header>
+  <main>
+    <div class="card">
+      <h2 style="margin-top:0;">📚 Librus</h2>
+      <div id="librus-summary">Brak danych — poczekaj na pierwszą synchronizację.</div>
+    </div>
+
+    <div class="card" id="events-card" style="display:none;">
+      <h2 style="margin-top:0;">📅 Wykryte terminy</h2>
+      <div id="events-list"></div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0;">💬 WhatsApp</h2>
+      <div id="whatsapp-summary" style="color: var(--muted);">Moduł jeszcze niepodłączony.</div>
+    </div>
+
+    <button id="logout-btn" style="background: transparent; color: var(--muted); margin-top: 10px;">Wyloguj</button>
+  </main>
+</div>
+
+<!-- Firebase (wersja modularna, ładowana z CDN Google) -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import {
+    getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import {
+    getFirestore, doc, onSnapshot
+  } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  // TODO: podmień na dane swojego projektu Firebase
+  // (Konsola Firebase -> Ustawienia projektu -> Twoje aplikacje -> konfiguracja SDK)
+  const firebaseConfig = {
+    apiKey: "TWOJ_API_KEY",
+    authDomain: "TWOJ_PROJEKT.firebaseapp.com",
+    projectId: "TWOJ_PROJEKT",
+    storageBucket: "TWOJ_PROJEKT.appspot.com",
+    messagingSenderId: "TWOJ_SENDER_ID",
+    appId: "TWOJ_APP_ID",
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const provider = new GoogleAuthProvider();
+
+  const loginScreen = document.getElementById("login-screen");
+  const appScreen = document.getElementById("app-screen");
+
+  document.getElementById("login-btn").addEventListener("click", () => {
+    signInWithPopup(auth, provider).catch((e) => alert("Błąd logowania: " + e.message));
+  });
+
+  document.getElementById("logout-btn").addEventListener("click", () => signOut(auth));
+
+  let unsubscribeSnapshot = null;
+
+  onAuthStateChanged(auth, (user) => {
+    if (unsubscribeSnapshot) unsubscribeSnapshot();
+
+    if (user) {
+      loginScreen.style.display = "none";
+      appScreen.style.display = "block";
+      document.getElementById("greeting").textContent = `Cześć, ${user.displayName?.split(" ")[0] || ""}!`;
+
+      // WAŻNE: user.uid musi być wpisany do scripts/users.config.json (firestoreUid),
+      // żeby GitHub Actions zapisywał dane pod właściwym dokumentem.
+      const ref = doc(db, "users", user.uid);
+      unsubscribeSnapshot = onSnapshot(ref, (snap) => renderData(snap.data()));
+    } else {
+      loginScreen.style.display = "block";
+      appScreen.style.display = "none";
+    }
+  });
+
+  function renderData(data) {
+    if (!data) return;
+
+    const dot = document.getElementById("sync-dot");
+    const text = document.getElementById("sync-text");
+    if (data.lastSync) {
+      const time = data.lastSync.timestamp?.toDate?.().toLocaleString("pl-PL") ?? "";
+      if (data.lastSync.status === "ok") {
+        dot.className = "dot ok";
+        text.textContent = `Ostatnia synchronizacja: ${time}`;
+      } else {
+        dot.className = "dot error";
+        text.textContent = `Błąd synchronizacji (${time}): ${data.lastSync.error ?? ""}`;
+      }
+    }
+
+    if (data.librus?.summary) {
+      document.getElementById("librus-summary").innerHTML =
+        data.librus.summary.replace(/\n/g, "<br>");
+    }
+
+    const events = data.librus?.detectedEvents || [];
+    const eventsCard = document.getElementById("events-card");
+    const eventsList = document.getElementById("events-list");
+    if (events.length > 0) {
+      eventsCard.style.display = "block";
+      eventsList.innerHTML = events.map((ev, i) => `
+        <div class="event-item">
+          <span>${ev.title} — ${ev.date}${ev.time ? " " + ev.time : ""}</span>
+          <button data-idx="${i}" class="add-to-calendar">Dodaj</button>
+        </div>
+      `).join("");
+      // Podłączenie kalendarza Google zrobimy w kolejnym module —
+      // na razie przycisk jest widoczny, ale jeszcze nieaktywny.
+      eventsList.querySelectorAll(".add-to-calendar").forEach((btn) => {
+        btn.addEventListener("click", () => alert("Integracja z Kalendarzem Google — w kolejnym kroku."));
+      });
+    } else {
+      eventsCard.style.display = "none";
+    }
+  }
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+</script>
+</body>
+</html>
