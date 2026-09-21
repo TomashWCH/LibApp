@@ -5,7 +5,8 @@
   "description": "Moduł WhatsApp (etap 1: parowanie). Osobny package.json, żeby nie wpływał na synchronizację Librusa.",
   "type": "module",
   "scripts": {
-    "pair": "node pair.js"
+    "pair": "node pair.js",
+    "sync": "node sync.js"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "7.0.0-rc14",
