@@ -360,9 +360,11 @@
     const tracked = getChildren(d).filter((k) => k.wa).length;
     if (!sy) return `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Podsumowania grup pojawią się po następnej synchronizacji (wymaga sekretu WHATSAPP_GROUPS).</p>`;
     const when = fmtStamp(sy.at);
+    const st = sy.stats ? Object.values(sy.stats).reduce((a, x) => ({ seen: a.seen + (x.seen || 0), text: a.text + (x.text || 0) }), { seen: 0, text: 0 }) : null;
+    const recv = st ? ` · odebrano wiadomości: ${st.seen} (z treścią: ${st.text})${sy.unresolved > 0 ? `, nieodszyfrowane: ${sy.unresolved}` : ""}` : "";
     return sy.status === "ok"
-      ? `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Ostatnie odświeżenie: ${esc(when)} · śledzone grupy: ${tracked}</p>`
-      : `<div class="warnbox" style="margin-top:8px">Ostatnie odświeżenie grup (${esc(when)}) nie w pełni się udało: ${esc(sy.error || "nieznany błąd")}.</div>`;
+      ? `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Ostatnie odświeżenie: ${esc(when)} · śledzone grupy: ${tracked}${recv}</p>`
+      : `<div class="warnbox" style="margin-top:8px">Ostatnie odświeżenie grup (${esc(when)}) nie w pełni się udało: ${esc(sy.error || "nieznany błąd")}.${esc(recv)}</div>`;
   }
 
   function whatsappCard(d) {
