@@ -346,6 +346,89 @@ function fetchAllGradeBoxes(client) {
   });
 }
 
+// ---------- Plan lekcji z API Synergii (gateway/api/2.0) ----------
+// Nowy układ Librusa (panel ucznia) nie ma już starej tabeli planu, więc pobieramy dane z tego samego API,
+// z którego korzysta przeglądarka. Wymaga sesji utworzonej przez client.authorize().
+const GATEWAY = "https://synergia.librus.pl/gateway/api/2.0";
+
+async function apiGet(client, pathAndQuery) {
+  const res = await client.caller.get(`${GATEWAY}/${pathAndQuery}`, { headers: { Accept: "application/json" } });
+  let data = res.data;
+  if (typeof data === "string") {
+    try { data = JSON.parse(data); } catch { throw new Error("API zwróciło nie-JSON (sesja mogła nie zadziałać)"); }
+  }
+  return data;
+}
+
+const hhmm = (v) => {
+  const m = String(v ?? "").match(/(\d{1,2}):(\d{2})/);
+  return m ? `${pad2(m[1])}:${m[2]}` : "";
+};
+
+// Słowniki (przedmioty, nauczyciele, sale) — pobierane tylko wtedy, gdy wpis planu ma same identyfikatory.
+async function loadLookups(client) {
+  const grab = async (path, key) => {
+    try {
+      const d = await apiGet(client, path);
+      return Object.fromEntries(asArray(d?.[key]).map((x) => [String(x.Id), x]));
+    } catch {
+      return {};
+    }
+  };
+  const [subjects, users, classrooms] = await Promise.all([grab("Subjects", "Subjects"), grab("Users", "Users"), grab("Classrooms", "Classrooms")]);
+  return { subjects, users, classrooms };
+}
+
+const personName = (p) => cleanText([p?.FirstName, p?.LastName].filter(Boolean).join(" "), 40);
+
+// Wynik Timetables?weekStart=... -> [{ date, lessons: [{ nr, time, title, teacher, room, flag }] }]
+function parseApiTimetable(json, lookups = {}) {
+  const tt = json?.Timetable ?? {};
+  const days = [];
+  for (const [date, slots] of Object.entries(tt)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+    const lessons = [];
+    for (const slot of asArray(slots)) {
+      for (const e of asArray(slot)) {
+        if (!e || typeof e !== "object") continue;
+        const subj = e.Subject?.Name ? e.Subject : lookups.subjects?.[String(e.Subject?.Id)] ?? e.Subject ?? {};
+        const teacher = e.Teacher?.LastName ? e.Teacher : lookups.users?.[String(e.Teacher?.Id)] ?? e.Teacher ?? {};
+        const room = e.Classroom?.Name ?? e.Classroom?.Symbol ?? lookups.classrooms?.[String(e.Classroom?.Id)]?.Name ?? lookups.classrooms?.[String(e.Classroom?.Id)]?.Symbol ?? "";
+        const title = cleanText(subj.Name || e.OrgSubject?.Name || subj.Short || "", 90);
+        if (!title && !e.LessonNo) continue;
+        const from = hhmm(e.HourFrom), to = hhmm(e.HourTo);
+        const nr = Number(e.LessonNo ?? e.SubjectNo);
+        lessons.push({
+          nr: Number.isFinite(nr) ? nr : lessons.length + 1,
+          time: from && to ? `${from}-${to}` : from,
+          title: title || "Lekcja",
+          teacher: personName(teacher),
+          room: cleanText(room, 20),
+          flag: e.IsCanceled ? "odwołane" : e.IsSubstitutionClass ? "zastępstwo" : "",
+        });
+      }
+    }
+    if (lessons.length) days.push({ date, lessons: lessons.sort((a, b) => a.nr - b.nr) });
+  }
+  return days.sort((a, b) => a.date.localeCompare(b.date));
+}
+
+// Zwraca dni z lekcjami z API; przy błędzie lub pustej odpowiedzi — pusta lista (wtedy działa stary parser).
+async function fetchTimetableApi(client, mondayISO, state) {
+  const json = await apiGet(client, `Timetables?weekStart=${mondayISO}`);
+  if (!state.described) {
+    state.described = true;
+    const firstDay = Object.values(json?.Timetable ?? {}).find((v) => asArray(v).flat().length);
+    const entry = asArray(firstDay).flat()[0];
+    console.log(`  plan (API): klucze odpowiedzi: ${Object.keys(json ?? {}).join(",") || "brak"}; wpis: ${entry ? Object.keys(entry).join(",") : "brak wpisów"}`);
+  }
+  const needLookups = Object.values(json?.Timetable ?? {}).some((day) =>
+    asArray(day).flat().some((e) => e?.Subject && !e.Subject.Name)
+  );
+  if (needLookups && !state.lookups) state.lookups = await loadLookups(client);
+  return parseApiTimetable(json, state.lookups ?? {});
+}
+
 // Gdy pole oceny nie ma podpowiedzi (title) z datą i kategorią — np. oceny opisowe/literowe w edukacji
 // wczesnoszkolnej — dociągamy szczegóły oceny ze strony szczegółów (max 40, po 3 równolegle).
 async function enrichBoxes(client, boxes) {
@@ -431,6 +514,7 @@ async function fetchLibrusData(login, password, today, since, until) {
 
   const todayISO = isoInWarsaw(now);
   const weekStarts = [mondayOf(todayISO), addDaysISO(mondayOf(todayISO), 7)];
+  const apiState = {}; // wspólny stan pobierania planu z API (diagnostyka i słowniki)
 
   const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml, timetableWeeks, homework, lucky, gradeBoxes] =
     await Promise.all([
@@ -452,9 +536,14 @@ async function fetchLibrusData(login, password, today, since, until) {
         weekStarts.map((monday) =>
           safe(
             `plan lekcji ${monday}`,
-            client.calendar
-              .getTimetable(monday, addDaysISO(monday, 6))
-              .then((res) => parseTimetable(res, monday)),
+            fetchTimetableApi(client, monday, apiState)
+              .then((days) => (days.length ? days : Promise.reject(new Error("API bez lekcji"))))
+              .catch((apiErr) => {
+                console.warn(`  ! plan lekcji (API) ${monday}: ${apiErr.message} — próbuję starej strony`);
+                return client.calendar
+                  .getTimetable(monday, addDaysISO(monday, 6))
+                  .then((res) => parseTimetable(res, monday));
+              }),
             []
           )
         )
