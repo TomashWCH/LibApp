@@ -1,8 +1,9 @@
 name: Codzienna synchronizacja Librus
 
-# Synchronizacja 2 razy dziennie, o stałej porze czasu polskiego:
-#   rano  ok. 7:07  (okno 6:30–7:30)
-#   po południu ok. 16:37  (okno 16:00–17:00)
+# Synchronizacja 3 razy dziennie, o stałej porze czasu polskiego:
+#   rano       ok. 7:07   (okno 6:30–7:30)
+#   po południu ok. 16:37 (okno 16:00–17:00)
+#   wieczorem  ok. 19:37
 # GitHub liczy harmonogram w UTC, a czas w Polsce zmienia się (zima/lato), dlatego
 # każda pora ma dwa wpisy cron, a zadanie "gate" uruchamia synchronizację tylko
 # wtedy, gdy w Polsce jest właściwa godzina. Drugi wpis danej pory jest pomijany.
@@ -12,6 +13,8 @@ on:
     - cron: "7 6 * * *"   # 8:07 latem — pomijane / 7:07 zimą (CET)
     - cron: "37 14 * * *" # 16:37 latem (CEST) / 15:37 zimą — zimą pomijane
     - cron: "37 15 * * *" # 17:37 latem — pomijane / 16:37 zimą (CET)
+    - cron: "37 17 * * *" # 19:37 latem (CEST) / 18:37 zimą — zimą pomijane
+    - cron: "37 18 * * *" # 20:37 latem — pomijane / 19:37 zimą (CET)
   workflow_dispatch: {} # pozwala odpalić ręcznie z zakładki "Actions" w GitHubie
 
 jobs:
@@ -27,7 +30,7 @@ jobs:
         run: |
           HOUR=$(TZ=Europe/Warsaw date +%H)
           echo "Czas w Polsce: $(TZ=Europe/Warsaw date +%H:%M)"
-          if [ "$EVENT" = "workflow_dispatch" ] || [ "$HOUR" = "07" ] || [ "$HOUR" = "16" ]; then
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$HOUR" = "07" ] || [ "$HOUR" = "16" ] || [ "$HOUR" = "19" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
@@ -84,3 +87,18 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           WHATSAPP_GROUPS: ${{ secrets.WHATSAPP_GROUPS }}
         run: npm run sync
+
+      # --- Powiadomienia push: nowe oceny/uwagi/terminy + podsumowania (7:xx dziś, 19:xx jutro/tydzień) ---
+      - name: Instalacja zależności modułu powiadomień
+        if: always()
+        continue-on-error: true
+        working-directory: notify
+        run: npm install
+
+      - name: Powiadomienia
+        if: always()
+        continue-on-error: true
+        working-directory: notify
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: npm run notify
