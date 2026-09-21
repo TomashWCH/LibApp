@@ -82,3 +82,16 @@ export async function useFirestoreAuthState(db, ownerUid) {
 
   return { state: { creds, keys }, saveCreds, flush };
 }
+
+// Usuwa zapisaną sesję (dane logowania + klucze). Potrzebne po nieudanym parowaniu
+// albo po wylogowaniu urządzenia przez WhatsApp — pozostałości powodowałyby błąd 401.
+export async function resetAuthState(db, ownerUid) {
+  const base = db.collection("waAuth").doc(ownerUid);
+  const refs = await base.collection("keys").listDocuments();
+  for (let i = 0; i < refs.length; i += BATCH_LIMIT) {
+    const batch = db.batch();
+    for (const ref of refs.slice(i, i + BATCH_LIMIT)) batch.delete(ref);
+    await batch.commit();
+  }
+  await base.delete();
+}
