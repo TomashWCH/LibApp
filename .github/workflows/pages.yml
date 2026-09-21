@@ -1,0 +1,38 @@
+name: Publikacja appki (GitHub Pages)
+
+on:
+  push:
+    branches: [main]
+    paths: ["public/**"]
+  workflow_dispatch: {} # pozwala odpalić ręcznie z zakładki "Actions"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
+
+      - name: Konfiguracja Pages
+        uses: actions/configure-pages@v5
+
+      - name: Spakowanie folderu public
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - name: Publikacja
+        id: deployment
+        uses: actions/deploy-pages@v4
