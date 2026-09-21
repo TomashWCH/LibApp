@@ -59,3 +59,28 @@ jobs:
           LIBRUS_LOGIN_DZIECKO2: ${{ secrets.LIBRUS_LOGIN_DZIECKO2 }}
           LIBRUS_PASSWORD_DZIECKO2: ${{ secrets.LIBRUS_PASSWORD_DZIECKO2 }}
         run: npm run sync
+
+      # --- Moduł WhatsApp: podsumowanie wybranych grup ---
+      # Działa niezależnie od Librusa (if: always()) i jego błąd nie psuje całego przebiegu
+      # (continue-on-error) — status widać w appce, na pulpicie w karcie WhatsApp.
+      - name: Node.js 22 dla modułu WhatsApp
+        if: always()
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instalacja zależności modułu WhatsApp
+        if: always()
+        continue-on-error: true
+        working-directory: whatsapp
+        run: npm install
+
+      - name: Podsumowanie grup WhatsApp
+        if: always()
+        continue-on-error: true
+        working-directory: whatsapp
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          WHATSAPP_GROUPS: ${{ secrets.WHATSAPP_GROUPS }}
+        run: npm run sync
