@@ -3,7 +3,7 @@
   "users": [
     {
       "displayName": "Rodzic",
-      "firestoreUid": "WKLEJ_TU_UID_Z_FIREBASE_AUTH",
+      "firestoreUid": "0mlgSYJpp7fSoCdl4BmTSSZId9s2",
       "children": [
         { "name": "Patryk", "secretSuffix": "DZIECKO1" },
         { "name": "Zuzanna", "secretSuffix": "DZIECKO2" }
