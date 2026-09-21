@@ -135,6 +135,23 @@
   .add:disabled { opacity: 0.6; cursor: default; }
   .added { color: var(--ok); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
+  /* kalendarz */
+  .cal-head { display: flex; align-items: center; justify-content: space-between; margin: 6px 0 10px; }
+  .cal-head h2 { font-size: 1.15rem; text-transform: capitalize; }
+  .cal-head .navbtns { display: flex; gap: 6px; }
+  .cal-btn { background: var(--card); border: 1px solid var(--line); border-radius: 10px; min-width: 40px; height: 38px; padding: 0 12px; cursor: pointer; font-size: 1.1rem; }
+  .cal-btn.txt { font-size: 0.85rem; font-weight: 600; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+  .cal-dow { text-align: center; font-size: 0.72rem; color: var(--muted); padding: 4px 0; font-weight: 600; }
+  .cal-day { position: relative; min-height: 50px; padding: 6px 0 14px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; font-size: 0.9rem; font-variant-numeric: tabular-nums; text-align: center; }
+  .cal-day.off { opacity: 0.45; }
+  .cal-day.today { border-color: var(--accent); border-width: 2px; padding: 5px 0 13px; font-weight: 700; }
+  .cal-day.sel { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+  .cal-day .dots { position: absolute; left: 0; right: 0; bottom: 5px; display: flex; justify-content: center; gap: 3px; }
+  .dot-c { width: 6px; height: 6px; border-radius: 50%; background: var(--ch); }
+  .cal-day.sel .dot-c { background: var(--on-accent); }
+  .legend { display: flex; gap: 16px; font-size: 0.82rem; color: var(--muted); margin: 12px 2px; flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .pair-code { font-size: 2rem; font-weight: 700; letter-spacing: 0.14em; text-align: center; font-variant-numeric: tabular-nums; padding: 14px 8px; margin: 10px 0; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line); user-select: all; }
   .wa-groups { margin: 8px 0 0; padding: 0; list-style: none; font-size: 0.9rem; color: var(--muted); }
   .wa-groups li { padding: 2px 0; }
@@ -269,7 +286,8 @@
   }
 
   // ---------- stan ----------
-  const state = { data: null, view: "pulpit" };
+  const now0 = new Date();
+  const state = { data: null, view: "pulpit", cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -331,6 +349,57 @@
       body = `<div class="warnbox">Parowanie się nie udało: ${esc(String(w.error || "nieznany błąd").replace(/\.$/, ""))}. Uruchom Sparuj WhatsApp jeszcze raz.</div>`;
     }
     return `<h2 class="sec">WhatsApp</h2><div class="card">${body}</div>`;
+  }
+
+  function viewKalendarz(d) {
+    const kids = getChildren(d);
+    if (kids.length === 0) return `<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>`;
+
+    // terminy wszystkich dzieci pogrupowane po dniu (bez odfiltrowywania przeszłości)
+    const byDay = new Map();
+    for (const k of kids) {
+      for (const ev of arr(k.sections?.events)) {
+        if (!isoDate.test(ev.date || "")) continue;
+        if (!byDay.has(ev.date)) byDay.set(ev.date, []);
+        byDay.get(ev.date).push({ ev, k });
+      }
+    }
+
+    const { y, m } = state.cal;
+    const first = new Date(y, m, 1);
+    const offset = (first.getDay() + 6) % 7; // poniedziałek = 0
+    const dim = new Date(y, m + 1, 0).getDate();
+    const total = Math.ceil((offset + dim) / 7) * 7;
+    const today = todayISO();
+    const title = first.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+
+    let cells = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"].map((n) => `<div class="cal-dow">${n}</div>`).join("");
+    for (let i = 0; i < total; i++) {
+      const dt = new Date(y, m, 1 - offset + i);
+      const iso = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+      const items = byDay.get(iso) || [];
+      const idxs = [...new Set(items.map((x) => x.k.idx))].slice(0, 3);
+      const cls = ["cal-day", dt.getMonth() !== m ? "off" : "", iso === today ? "today" : "", iso === state.calDay ? "sel" : ""].filter(Boolean).join(" ");
+      const label = `${dt.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" })}${items.length ? ", terminów: " + items.length : ""}`;
+      cells += `<button class="${cls}" data-day="${iso}" aria-label="${esc(label)}">${dt.getDate()}<span class="dots">${idxs.map((ix) => `<i class="dot-c c${ix}"></i>`).join("")}</span></button>`;
+    }
+
+    const list = (byDay.get(state.calDay) || []).slice().sort((a, b) => (a.ev.time || "").localeCompare(b.ev.time || ""));
+    const [sy, sm, sd] = state.calDay.split("-").map(Number);
+    const dayTitle = new Date(sy, sm - 1, sd).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
+
+    return `<div class="cal-head">
+        <h2>${esc(title)}</h2>
+        <div class="navbtns">
+          <button class="cal-btn txt" data-caltoday="1">Dziś</button>
+          <button class="cal-btn" data-calnav="-1" aria-label="Poprzedni miesiąc">‹</button>
+          <button class="cal-btn" data-calnav="1" aria-label="Następny miesiąc">›</button>
+        </div>
+      </div>
+      <div class="cal-grid">${cells}</div>
+      <div class="legend">${kids.map((k) => `<span class="c${k.idx}"><i class="dot-c"></i>${esc(k.name)}</span>`).join("")}</div>
+      <h2 class="sec" style="text-transform:capitalize">${esc(dayTitle)}</h2>
+      <div class="card">${list.length ? `<ul class="rows">${list.map(({ ev, k }) => eventRow(ev, k, true)).join("")}</ul>` : `<p class="empty">Brak terminów tego dnia.</p>`}</div>`;
   }
 
   function viewPulpit(d) {
@@ -406,7 +475,7 @@
       ${hasSections ? `
         ${section("⭐", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
         ${section("⚠️", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
-        ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 30 dni.")}
+        ${section("📅", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
         ${section("✉️", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
     </div>`;
@@ -415,12 +484,13 @@
   function render() {
     const d = state.data;
     const kids = getChildren(d);
-    if (state.view !== "pulpit" && !kids.some((k) => k.key === state.view)) state.view = "pulpit";
+    if (state.view !== "pulpit" && state.view !== "kalendarz" && !kids.some((k) => k.key === state.view)) state.view = "pulpit";
     registry.clear();
-    $("#content").innerHTML = state.view === "pulpit" ? viewPulpit(d) : viewChild(d, state.view);
+    $("#content").innerHTML = state.view === "pulpit" ? viewPulpit(d) : state.view === "kalendarz" ? viewKalendarz(d) : viewChild(d, state.view);
 
     $("#nav").innerHTML = `
       <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">🏠</span>Pulpit</button>
+      <button data-goto="kalendarz" ${state.view === "kalendarz" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">📅</span>Kalendarz</button>
       ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${esc((k.name || "?").charAt(0).toUpperCase())}</span>${esc(k.name)}</button>`).join("")}`;
 
     const dot = $("#sync-dot"), text = $("#sync-text");
@@ -513,6 +583,28 @@
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    const day = e.target.closest("[data-day]");
+    if (day) {
+      const [yy, mm, dd] = day.dataset.day.split("-").map(Number);
+      state.calDay = day.dataset.day;
+      state.cal = { y: yy, m: mm - 1 };
+      render();
+      return;
+    }
+    const navBtn = e.target.closest("[data-calnav]");
+    if (navBtn) {
+      const t = new Date(state.cal.y, state.cal.m + Number(navBtn.dataset.calnav), 1);
+      state.cal = { y: t.getFullYear(), m: t.getMonth() };
+      render();
+      return;
+    }
+    if (e.target.closest("[data-caltoday]")) {
+      const n = new Date();
+      state.cal = { y: n.getFullYear(), m: n.getMonth() };
+      state.calDay = todayISO();
+      render();
+      return;
+    }
     const add = e.target.closest("[data-add]");
     if (add) { onAdd(add.dataset.add, add); return; }
     if (e.target.closest("#logout-btn")) signOut(auth);
