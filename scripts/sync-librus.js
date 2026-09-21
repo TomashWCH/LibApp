@@ -224,6 +224,81 @@ function safeMonthsAhead(now, count) {
   return out;
 }
 
+// ---------- Plan lekcji, zadania domowe, szczęśliwy numerek (bez Gemini — parsowanie wprost) ----------
+const cleanText = (v, max = 120) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+const DAY_KEYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+function addDaysISO(iso, n) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return `${t.getUTCFullYear()}-${pad2(t.getUTCMonth() + 1)}-${pad2(t.getUTCDate())}`;
+}
+function mondayOf(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dow = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7; // poniedziałek = 0
+  return addDaysISO(iso, -dow);
+}
+
+// Wynik getTimetable ({ hours, table: { Monday: [komórki...], ... } }) -> [{ date, lessons: [...] }]
+function parseTimetable(res, mondayISO) {
+  const hours = asArray(res?.hours).map((h) => cleanText(h, 40));
+  const out = [];
+  for (let i = 0; i < 7; i++) {
+    const lessons = [];
+    asArray(res?.table?.[DAY_KEYS[i]]).forEach((cell, idx) => {
+      if (!cell || !cell.title) return;
+      const h = hours[idx] || "";
+      const time = h.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
+      const nr = h.match(/^\s*(\d{1,2})\b/);
+      lessons.push({
+        nr: nr ? Number(nr[1]) : idx + 1,
+        time: time ? `${time[1]}-${time[2]}` : "",
+        title: cleanText(cell.title, 90),
+        flag: cleanText(cell.flag, 60),
+      });
+    });
+    if (lessons.length) out.push({ date: addDaysISO(mondayISO, i), lessons });
+  }
+  return out;
+}
+
+// Zadania z modułu "Moje zadania". Zwraca [{ subject, title, teacher, type, from, to, status }].
+async function fetchHomework(client, today) {
+  const subjects = asArray(await client.homework.listSubjects()).filter(Boolean);
+  const all = subjects.find((s) => !Number.isFinite(s.id) || s.id <= 0 || /wszystk/i.test(s.name));
+  const ids = all
+    ? [Number.isFinite(all.id) ? all.id : -1]
+    : subjects.map((s) => s.id).filter(Number.isFinite).slice(0, 25);
+  const from = addDaysISO(today, -14);
+  const to = addDaysISO(today, 45);
+
+  const seen = new Set();
+  const rows = [];
+  for (const id of ids) {
+    for (const r of asArray(await client.homework.listHomework(id, from, to))) {
+      if (!r || seen.has(r.id)) continue;
+      seen.add(r.id);
+      rows.push({
+        subject: cleanText(r.subject, 60),
+        title: cleanText(r.title, 140),
+        teacher: cleanText(r.user, 60),
+        type: cleanText(r.type, 40),
+        from: normalizeDay(r.from) ?? cleanText(r.from, 20),
+        to: normalizeDay(r.to) ?? cleanText(r.to, 20),
+        status: cleanText(r.status, 40),
+      });
+    }
+  }
+  return rows
+    .filter((r) => !isoLike(r.to) || r.to >= addDaysISO(today, -7))
+    .sort((a, b) => String(a.to).localeCompare(String(b.to)))
+    .slice(0, 60);
+}
+const isoLike = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ""));
+
+// Firestore nie przyjmuje undefined/NaN — czyścimy przez JSON.
+const clean = (v) => JSON.parse(JSON.stringify(v ?? null));
+
 async function fetchLibrusData(login, password, today, since, until) {
   const client = new Librus();
   // UWAGA: biblioteka połyka błędy logowania, dlatego niżej sprawdzamy, czy
@@ -241,7 +316,10 @@ async function fetchLibrusData(login, password, today, since, until) {
   const now = new Date();
   const monthsAhead = safeMonthsAhead(now, 2); // kolejne 2 miesiące (okno 60 dni)
 
-  const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml] =
+  const todayISO = isoInWarsaw(now);
+  const weekStarts = [mondayOf(todayISO), addDaysISO(mondayOf(todayISO), 7)];
+
+  const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml, timetableWeeks, homework, lucky] =
     await Promise.all([
       safe("oceny", client.info.getGrades(), []),
       safe("ogłoszenia", client.inbox.listAnnouncements(), []),
@@ -257,6 +335,19 @@ async function fetchLibrusData(login, password, today, since, until) {
         client.caller.get("https://synergia.librus.pl/uwagi").then((r) => r.data),
         ""
       ),
+      Promise.all(
+        weekStarts.map((monday) =>
+          safe(
+            `plan lekcji ${monday}`,
+            client.calendar
+              .getTimetable(monday, addDaysISO(monday, 6))
+              .then((res) => parseTimetable(res, monday)),
+            []
+          )
+        )
+      ),
+      safe("zadania domowe", fetchHomework(client, todayISO), []),
+      safe("szczęśliwy numerek", client.info.getLuckyNumber(), null),
     ]);
 
   const calendarAll = [calendarThis, calendarNext]
@@ -313,7 +404,15 @@ async function fetchLibrusData(login, password, today, since, until) {
 
   const uwagiTekst = htmlToText(remarksHtml).slice(0, 12000);
 
-  return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst };
+  const extra = {
+    timetable: asArray(timetableWeeks)
+      .flat()
+      .filter((d) => d.date >= today && d.date <= addDaysISO(today, 8)),
+    homework: asArray(homework),
+    luckyNumber: Number.isFinite(lucky) ? lucky : null,
+  };
+
+  return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst, extra };
 }
 
 // ---------- Synchronizacja ----------
@@ -336,8 +435,11 @@ async function syncChild(child) {
   console.log(`[${child.name}] Logowanie do Librusa i pobieranie danych...`);
   const raw = await fetchLibrusData(login, password, today, since, until);
 
+  console.log(
+    `[${child.name}] plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}`
+  );
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
-  return summarizeWithGemini(
+  const ai = await summarizeWithGemini(
     {
       oceny: raw.grades,
       terminarz: raw.terminarz,
@@ -349,6 +451,7 @@ async function syncChild(child) {
     today,
     since
   );
+  return { ...ai, extra: raw.extra };
 }
 
 // Łączy wyniki dzieci w jedno podsumowanie i jedną listę terminów
@@ -415,6 +518,7 @@ async function syncUser(user) {
           name: r.child.name,
           summary: r.summary,
           sections: r.sections,
+          extra: clean(r.extra),
           updatedAt: now,
           lastError: admin.firestore.FieldValue.delete(),
         }
