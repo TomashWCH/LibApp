@@ -262,6 +262,57 @@ function parseTimetable(res, mondayISO) {
   return out;
 }
 
+// ---------- Pełna lista ocen (bez Gemini) ----------
+function infoField(info, label) {
+  const m = String(info ?? "").match(new RegExp(`${label}\\s*:\\s*([^\\n]*)`, "i"));
+  return m ? m[1].trim() : "";
+}
+
+// Oceny z całego roku -> [{ id, subject, value, base, num, weight, inAvg, final, date, sem, category, teacher, comment }]
+// num: wartość liczbowa (plus = +0,5, minus = -0,25); base: 1–6; final: ocena śródroczna/roczna/przewidywana.
+function buildGradeList(subjects) {
+  const seen = new Set();
+  const out = [];
+  for (const s of asArray(subjects)) {
+    if (!s?.name) continue;
+    for (const sem of asArray(s.semester)) {
+      for (const g of asArray(sem?.grades)) {
+        const key = Number.isFinite(g.id) ? g.id : `${s.name}|${g.value}|${g.info}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const value = cleanText(g.value, 6);
+        const m = value.match(/^([1-6])([+-])?$/);
+        const base = m ? Number(m[1]) : null;
+        const num = m ? base + (m[2] === "+" ? 0.5 : m[2] === "-" ? -0.25 : 0) : null;
+        const category = cleanText(infoField(g.info, "Kategoria"), 60);
+        const date = normalizeDay(infoField(g.info, "Data"));
+        const weight = parseInt(infoField(g.info, "Waga"), 10);
+        const month = date ? Number(date.slice(5, 7)) : null;
+
+        out.push({
+          id: Number.isFinite(g.id) ? g.id : null,
+          subject: cleanText(s.name, 60),
+          value,
+          base,
+          num,
+          weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+          inAvg: !/^\s*nie/i.test(infoField(g.info, "Licz do średniej")),
+          final: /(śródroczn|roczn|przewidywan)/i.test(category),
+          date,
+          sem: month == null ? 0 : month >= 2 && month <= 8 ? 2 : 1, // przybliżenie: II semestr od lutego
+          category,
+          teacher: cleanText(infoField(g.info, "Nauczyciel"), 60),
+          comment: cleanText(infoField(g.info, "Komentarz"), 140),
+        });
+      }
+    }
+  }
+  return out
+    .sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")))
+    .slice(-600);
+}
+
 // Zadania z modułu "Moje zadania". Zwraca [{ subject, title, teacher, type, from, to, status }].
 async function fetchHomework(client, today) {
   const subjects = asArray(await client.homework.listSubjects()).filter(Boolean);
@@ -410,6 +461,7 @@ async function fetchLibrusData(login, password, today, since, until) {
       .filter((d) => d.date >= today && d.date <= addDaysISO(today, 8)),
     homework: asArray(homework),
     luckyNumber: Number.isFinite(lucky) ? lucky : null,
+    gradeList: buildGradeList(subjects),
   };
 
   return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst, extra };
@@ -436,7 +488,7 @@ async function syncChild(child) {
   const raw = await fetchLibrusData(login, password, today, since, until);
 
   console.log(
-    `[${child.name}] plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}`
+    `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}`
   );
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
   const ai = await summarizeWithGemini(
