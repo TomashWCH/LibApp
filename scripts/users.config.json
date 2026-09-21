@@ -5,8 +5,8 @@
       "displayName": "Rodzic",
       "firestoreUid": "WKLEJ_TU_UID_Z_FIREBASE_AUTH",
       "children": [
-        { "name": "Dziecko 1", "secretSuffix": "DZIECKO1" },
-        { "name": "Dziecko 2", "secretSuffix": "DZIECKO2" }
+        { "name": "Patryk", "secretSuffix": "DZIECKO1" },
+        { "name": "Zuzanna", "secretSuffix": "DZIECKO2" }
       ]
     }
   ]
