@@ -270,47 +270,109 @@ function infoField(info, label) {
 
 // Oceny z całego roku -> [{ id, subject, value, base, num, weight, inAvg, final, date, sem, category, teacher, comment }]
 // num: wartość liczbowa (plus = +0,5, minus = -0,25); base: 1–6; final: ocena śródroczna/roczna/przewidywana.
-function buildGradeList(subjects) {
+// Oceny bez cyfry (np. literowe F, W, B, D, P) trafiają na listę z base = null: są widoczne, ale nie liczą się do średniej.
+function makeGrade(subjectName, g) {
+  const value = cleanText(g.value, 6);
+  const m = value.match(/^([1-6])([+-])?$/);
+  const base = m ? Number(m[1]) : null;
+  const num = m ? base + (m[2] === "+" ? 0.5 : m[2] === "-" ? -0.25 : 0) : null;
+  const category = cleanText(infoField(g.info, "Kategoria"), 60);
+  const date = normalizeDay(infoField(g.info, "Data"));
+  const weight = parseInt(infoField(g.info, "Waga"), 10);
+  const month = date ? Number(date.slice(5, 7)) : null;
+  return {
+    id: Number.isFinite(g.id) ? g.id : null,
+    subject: cleanText(subjectName, 60) || "Inne oceny",
+    value,
+    base,
+    num,
+    weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
+    inAvg: !/^\s*nie/i.test(infoField(g.info, "Licz do średniej")),
+    final: /(śródroczn|roczn|przewidywan)/i.test(category),
+    date,
+    sem: month == null ? 0 : month >= 2 && month <= 8 ? 2 : 1, // przybliżenie: II semestr od lutego
+    category,
+    teacher: cleanText(infoField(g.info, "Nauczyciel"), 60),
+    comment: cleanText(infoField(g.info, "Komentarz"), 140),
+  };
+}
+
+// subjects: wynik biblioteki (oceny z głównej tabeli); boxes: wszystkie pola ocen ze strony (także z innych tabel)
+function buildGradeList(subjects, boxes = []) {
   const seen = new Set();
   const out = [];
+  const add = (subjectName, g) => {
+    const key = Number.isFinite(g.id) ? g.id : `${subjectName}|${g.value}|${g.info}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(makeGrade(subjectName, g));
+  };
   for (const s of asArray(subjects)) {
     if (!s?.name) continue;
-    for (const sem of asArray(s.semester)) {
-      for (const g of asArray(sem?.grades)) {
-        const key = Number.isFinite(g.id) ? g.id : `${s.name}|${g.value}|${g.info}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-
-        const value = cleanText(g.value, 6);
-        const m = value.match(/^([1-6])([+-])?$/);
-        const base = m ? Number(m[1]) : null;
-        const num = m ? base + (m[2] === "+" ? 0.5 : m[2] === "-" ? -0.25 : 0) : null;
-        const category = cleanText(infoField(g.info, "Kategoria"), 60);
-        const date = normalizeDay(infoField(g.info, "Data"));
-        const weight = parseInt(infoField(g.info, "Waga"), 10);
-        const month = date ? Number(date.slice(5, 7)) : null;
-
-        out.push({
-          id: Number.isFinite(g.id) ? g.id : null,
-          subject: cleanText(s.name, 60),
-          value,
-          base,
-          num,
-          weight: Number.isFinite(weight) && weight > 0 ? weight : 1,
-          inAvg: !/^\s*nie/i.test(infoField(g.info, "Licz do średniej")),
-          final: /(śródroczn|roczn|przewidywan)/i.test(category),
-          date,
-          sem: month == null ? 0 : month >= 2 && month <= 8 ? 2 : 1, // przybliżenie: II semestr od lutego
-          category,
-          teacher: cleanText(infoField(g.info, "Nauczyciel"), 60),
-          comment: cleanText(infoField(g.info, "Komentarz"), 140),
-        });
-      }
-    }
+    for (const sem of asArray(s.semester)) for (const g of asArray(sem?.grades)) add(s.name, g);
+  }
+  for (const b of asArray(boxes)) {
+    if (b && cleanText(b.value, 6)) add(b.subject || b.section, b);
   }
   return out
     .sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")))
     .slice(-600);
+}
+
+// Wszystkie pola ocen na stronie ocen (biblioteka czyta tylko główną tabelę, więc oceny z innych
+// tabel — np. literowe — mogłyby zostać pominięte). Zwraca też przedmiot i nagłówek tabeli.
+function fetchAllGradeBoxes(client) {
+  return client._mapper("przegladaj_oceny/uczen", "span.grade-box", ($, el) => {
+    const $el = $(el);
+    const a = $el.find("a").first();
+    const clean = (t) => String(t ?? "").replace(/\s+/g, " ").trim();
+    const value = clean(a.length ? a.text() : $el.text());
+    // przedmiot = pierwsza komórka wiersza, która nie zawiera pól ocen (zwykle druga, a w innych tabelach pierwsza)
+    const cells = $el.closest("tr").children("td").toArray();
+    let subject = "";
+    for (const idx of [1, 0, 2, 3]) {
+      const c = cells[idx];
+      if (!c) continue;
+      const t = clean($(c).text());
+      if (t && t.length <= 60 && $(c).find("span.grade-box").length === 0) { subject = t; break; }
+    }
+    return {
+      id: parseInt(String(a.attr("href") || "").split("/").pop(), 10),
+      value,
+      info: String(a.attr("title") || "").replace(/<\s*br\s*\/?\s*>/gi, "\n"),
+      subject,
+      section: clean($el.closest("table").find("th").first().text()).slice(0, 40),
+    };
+  });
+}
+
+// Gdy pole oceny nie ma podpowiedzi (title) z datą i kategorią — np. oceny opisowe/literowe w edukacji
+// wczesnoszkolnej — dociągamy szczegóły oceny ze strony szczegółów (max 40, po 3 równolegle).
+async function enrichBoxes(client, boxes) {
+  const need = asArray(boxes).filter((b) => Number.isFinite(b.id) && !String(b.info || "").trim()).slice(0, 40);
+  let i = 0;
+  const worker = async () => {
+    while (i < need.length) {
+      const b = need[i++];
+      try {
+        const d = await client.info.getGrade(b.id);
+        if (d) {
+          b.info = [
+            `Kategoria: ${cleanText(d.category, 60)}`,
+            `Data: ${cleanText(d.date, 30)}`,
+            `Nauczyciel: ${cleanText(d.teacher, 60)}`,
+            `Licz do średniej: ${d.inAverage === false ? "nie" : "tak"}`,
+            `Waga: ${cleanText(d.multiplier, 6)}`,
+            `Komentarz: ${cleanText(d.comment, 140)}`,
+          ].join("\n");
+        }
+      } catch {
+        /* pojedyncza ocena bez szczegółów nie blokuje reszty */
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return boxes;
 }
 
 // Zadania z modułu "Moje zadania". Zwraca [{ subject, title, teacher, type, from, to, status }].
@@ -370,7 +432,7 @@ async function fetchLibrusData(login, password, today, since, until) {
   const todayISO = isoInWarsaw(now);
   const weekStarts = [mondayOf(todayISO), addDaysISO(mondayOf(todayISO), 7)];
 
-  const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml, timetableWeeks, homework, lucky] =
+  const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml, timetableWeeks, homework, lucky, gradeBoxes] =
     await Promise.all([
       safe("oceny", client.info.getGrades(), []),
       safe("ogłoszenia", client.inbox.listAnnouncements(), []),
@@ -399,6 +461,7 @@ async function fetchLibrusData(login, password, today, since, until) {
       ),
       safe("zadania domowe", fetchHomework(client, todayISO), []),
       safe("szczęśliwy numerek", client.info.getLuckyNumber(), null),
+      safe("oceny (wszystkie pola)", fetchAllGradeBoxes(client).then((b) => enrichBoxes(client, b)), []),
     ]);
 
   const calendarAll = [calendarThis, calendarNext]
@@ -461,8 +524,12 @@ async function fetchLibrusData(login, password, today, since, until) {
       .filter((d) => d.date >= today && d.date <= addDaysISO(today, 8)),
     homework: asArray(homework),
     luckyNumber: Number.isFinite(lucky) ? lucky : null,
-    gradeList: buildGradeList(subjects),
+    gradeList: buildGradeList(subjects, gradeBoxes),
   };
+  // Diagnostyka bez nazw i treści: ile ocen znalazła biblioteka, ile wszystkie pola i jakie wartości nie są cyframi.
+  const letters = {};
+  for (const g of extra.gradeList) if (g.base == null) letters[g.value] = (letters[g.value] || 0) + 1;
+  console.log(`  oceny: biblioteka ${asArray(subjects).reduce((n, s) => n + asArray(s?.semester).reduce((m, x) => m + asArray(x?.grades).length, 0), 0)}, wszystkie pola ${asArray(gradeBoxes).length}, razem ${extra.gradeList.length}; bez cyfry: ${Object.entries(letters).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"}`);
 
   return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst, extra };
 }
