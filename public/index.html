@@ -300,6 +300,8 @@
   nav button { font-size: 0.66rem; white-space: nowrap; letter-spacing: -0.01em; }
   nav button[aria-current="page"] { font-weight: 600; }
 
+  .calc { font-size: 0.8rem; color: var(--muted); margin: 0 0 6px; overflow-wrap: anywhere; }
+
   /* plan lekcji */
   details.plan summary { padding: 12px 0; }
 </style>
@@ -570,6 +572,7 @@
   const curSem = () => { const m = new Date().getMonth() + 1; return m >= 2 && m <= 8 ? 2 : 1; };
   const gradesOf = (c) => arr(c.extra?.gradeList);
   const inScope = (g, sem) => sem === "all" || g.sem === 0 || g.sem === (sem === "cur" ? curSem() : Number(sem));
+  // Do średniej liczą się oceny z cyfrą (także 4+ i 3-). Samo "+" lub "-" (bez cyfry), "np", "bz" i "nb" nie mają wartości liczbowej, więc się nie liczą.
   const countable = (g) => !g.final && g.inAvg !== false && g.num != null;
   const fmtAvg = (v) => (v == null ? "–" : v.toFixed(2).replace(".", ","));
   const gcls = (g) => (g.base >= 5 ? "g5" : g.base === 4 ? "g4" : g.base === 3 ? "g3" : g.base ? "g2" : "g0");
@@ -660,10 +663,16 @@
       const shown = list.slice(-10);
       const chips = (list.length > shown.length ? `<span class="sub">+${list.length - shown.length}</span>` : "") +
         shown.map((g) => gradeChip(g, g.date && g.date >= shiftISO(today, -7) && !g.final ? "new" : "")).join("");
+      const counted = list.filter(countable), skipped = list.filter((g) => !countable(g));
+      const dec = (v) => String(v).replace(".", ",");
+      const calc = counted.length
+        ? `Średnia = (${counted.slice(0, 12).map((g) => `${dec(g.num)}×${g.weight || 1}`).join(" + ")}${counted.length > 12 ? " + …" : ""}) ÷ ${counted.reduce((a, g) => a + (g.weight || 1), 0)} = ${fmtAvg(avg)}`
+        : "Brak ocen liczonych do średniej.";
+      const calcHtml = `<p class="calc">${calc}${skipped.length ? ` Nie liczą się: ${skipped.map((g) => esc(g.final ? `${g.value} (końcowa)` : g.inAvg === false ? `${g.value} (poza średnią)` : g.value)).join(", ")}.` : ""}</p>`;
       const rows = list.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((g) => `<li>
         ${gradeChip(g)}<div class="main"><b>${esc(g.category || (g.final ? "Ocena końcowa" : "Ocena"))}</b>
         <small>${fmtDate(g.date)}${g.weight ? ` · waga ${g.weight}` : ""}${g.inAvg === false ? " · nie liczy się do średniej" : ""}${g.teacher ? " · " + esc(g.teacher) : ""}${g.comment ? "<br>" + esc(g.comment) : ""}</small></div></li>`).join("");
-      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa"><span class="avgpill ${avgCls(avg)}">${fmtAvg(avg)}</span><span class="ta">${trendArrow(avg != null && before != null ? avg - before : null)}</span></span><span class="sg">${chips}</span></summary><ul class="rows">${rows}</ul></details>`;
+      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa"><span class="avgpill ${avgCls(avg)}">${fmtAvg(avg)}</span><span class="ta">${trendArrow(avg != null && before != null ? avg - before : null)}</span></span><span class="sg">${chips}</span></summary>${calcHtml}<ul class="rows">${rows}</ul></details>`;
     }).join("");
 
     const seg = [["1", "Semestr I"], ["2", "Semestr II"], ["all", "Cały rok"]]
@@ -675,7 +684,7 @@
       : "";
 
     return `<div class="card">
-      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia ważona</small></div>
+      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia z ${[...bySubject(scoped.filter((g) => g.date && g.date <= today)).values()].filter((l) => wavg(l) != null).length} przedmiotów</small></div>
         <div style="text-align:right"><div class="big">${fmtAvg(cur)}</div>${deltaHtml}</div></div>
       <div class="seg">${seg}</div>
       ${freshHtml}
