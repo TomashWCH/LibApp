@@ -135,6 +135,10 @@
   .add:disabled { opacity: 0.6; cursor: default; }
   .added { color: var(--ok); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
+  .pair-code { font-size: 2rem; font-weight: 700; letter-spacing: 0.14em; text-align: center; font-variant-numeric: tabular-nums; padding: 14px 8px; margin: 10px 0; border-radius: 12px; background: var(--bg); border: 1px dashed var(--line); user-select: all; }
+  .wa-groups { margin: 8px 0 0; padding: 0; list-style: none; font-size: 0.9rem; color: var(--muted); }
+  .wa-groups li { padding: 2px 0; }
+
   nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
     background: var(--card); border-top: 1px solid var(--line);
@@ -305,10 +309,34 @@
     </li>`;
   }
 
+  function whatsappCard(d) {
+    const w = d?.whatsapp;
+    const how = "WhatsApp → Ustawienia → Połączone urządzenia → Połącz urządzenie → Połącz za pomocą numeru telefonu";
+    let body;
+    if (!w) {
+      body = `<p style="color:var(--muted)">Moduł jeszcze niepodłączony. Aby sparować, uruchom w GitHubie: Actions → Sparuj WhatsApp.</p>`;
+    } else if (w.status === "connecting") {
+      body = `<p style="color:var(--muted)">Łączę z WhatsAppem…</p>`;
+    } else if (w.status === "pairing") {
+      const age = w.pairingAt?.toDate ? Date.now() - w.pairingAt.toDate().getTime() : 0;
+      body = age > 3 * 60 * 1000
+        ? `<p style="color:var(--muted)">Kod wygasł. Uruchom Sparuj WhatsApp jeszcze raz.</p>`
+        : `<p>Wpisz ten kod w WhatsAppie:</p><div class="pair-code">${esc(w.pairingCode)}</div><p style="color:var(--muted);font-size:0.85rem">${how}. Kod działa krótko.</p>`;
+    } else if (w.status === "paired") {
+      const groups = arr(w.groups);
+      body = `<p><span class="added">✓ Połączono</span> · grup: ${groups.length}</p>
+        ${groups.length ? `<ul class="wa-groups">${groups.slice(0, 10).map((g) => `<li>${esc(g.name)}</li>`).join("")}${groups.length > 10 ? `<li>…i ${groups.length - 10} więcej</li>` : ""}</ul>` : ""}
+        <p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Wybór grup do podsumowań dodamy w następnym kroku.</p>`;
+    } else {
+      body = `<div class="warnbox">Parowanie się nie udało: ${esc(String(w.error || "nieznany błąd").replace(/\.$/, ""))}. Uruchom Sparuj WhatsApp jeszcze raz.</div>`;
+    }
+    return `<h2 class="sec">WhatsApp</h2><div class="card">${body}</div>`;
+  }
+
   function viewPulpit(d) {
     const kids = getChildren(d);
     if (kids.length === 0) {
-      return `<div class="card"><p>Czekam na pierwszą synchronizację. Uruchamia się codziennie rano.</p></div>`;
+      return `<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>${whatsappCard(d)}`;
     }
     const all = kids.map((k) => ({ k, s: sec(k) }));
     const total = (f) => all.reduce((n, x) => n + f(x.s), 0);
@@ -337,7 +365,7 @@
       : "";
 
     return `${stats}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
-      <h2 class="sec">WhatsApp</h2><div class="card"><p style="color:var(--muted)">Moduł jeszcze niepodłączony.</p></div>
+      ${whatsappCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>`;
   }
 
