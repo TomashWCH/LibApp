@@ -1,14 +1,16 @@
 // scripts/sync-librus.js
 //
 // Uruchamiane cyklicznie przez GitHub Actions (.github/workflows/sync.yml).
-// Dla każdego użytkownika z users.config.json:
-//   1. loguje się do Librusa (login/hasło z sekretów GitHub Actions)
+// Dla każdego użytkownika (rodzica) z users.config.json i każdego jego dziecka:
+//   1. loguje się do Librusa (login/hasło dziecka z sekretów GitHub Actions)
 //   2. pobiera: nieprzeczytane wiadomości/ogłoszenia, oceny, terminarz
 //   3. wysyła zebrane dane do Gemini z prośbą o zwięzłe podsumowanie PL
 //      + wykrycie terminów, które mogłyby trafić do kalendarza
 //   4. zapisuje wynik do Firestore (users/{uid}) + historię synchronizacji
 //
-// Błąd dla jednego użytkownika NIE przerywa synchronizacji pozostałych.
+// Podsumowania wszystkich dzieci są łączone w jedno (librus.summary), z nagłówkiem
+// przy każdym dziecku, oraz zapisywane osobno w librus.children.<SUFFIX>.
+// Błąd dla jednego dziecka NIE przerywa synchronizacji pozostałych.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -35,12 +37,13 @@ const { users } = JSON.parse(readFileSync(usersConfigPath, "utf-8"));
 
 // ---------- Gemini ----------
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = "gemini-3.1-flash-lite";
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite"; // szybki, tani; nazwę można zmienić tu lub sekretem/zmienną GEMINI_MODEL
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
 
-async function summarizeWithGemini(rawData) {
+async function summarizeWithGemini(rawData, childName) {
   const prompt = `
-Jesteś asystentem podsumowującym dziennik elektroniczny Librus dla rodzica/ucznia.
+Jesteś asystentem podsumowującym dziennik elektroniczny Librus dla rodzica.
+Dane dotyczą dziecka: ${childName}.
 Na podstawie poniższych surowych danych JSON przygotuj:
 
 1. "summary" — zwięzłe podsumowanie po polsku (kilka punktów), TYLKO to co istotne:
@@ -98,56 +101,136 @@ async function fetchLibrusData(login, password) {
 }
 
 // ---------- Główna pętla ----------
-async function syncUser(user) {
-  const loginEnv = `LIBRUS_LOGIN_${user.secretSuffix}`;
-  const passEnv = `LIBRUS_PASSWORD_${user.secretSuffix}`;
+function toText(value) {
+  if (Array.isArray(value)) return value.join("\n");
+  return String(value ?? "");
+}
+
+// Pobiera i streszcza dane jednego dziecka.
+async function syncChild(child) {
+  const loginEnv = `LIBRUS_LOGIN_${child.secretSuffix}`;
+  const passEnv = `LIBRUS_PASSWORD_${child.secretSuffix}`;
   const login = process.env[loginEnv];
   const password = process.env[passEnv];
 
-  const userDocRef = db.collection("users").doc(user.firestoreUid);
-  const syncHistoryRef = userDocRef.collection("syncHistory").doc();
-  const startedAt = admin.firestore.Timestamp.now();
-
   if (!login || !password) {
-    throw new Error(
-      `Brak sekretów ${loginEnv} / ${passEnv} w GitHub Actions dla użytkownika ${user.displayName}`
-    );
+    throw new Error(`Brak sekretów ${loginEnv} / ${passEnv} w GitHub Actions`);
   }
 
-  console.log(`[${user.displayName}] Logowanie do Librusa...`);
+  console.log(`[${child.name}] Logowanie do Librusa...`);
   const rawData = await fetchLibrusData(login, password);
 
-  console.log(`[${user.displayName}] Generowanie podsumowania (Gemini)...`);
-  const { summary, detectedEvents } = await summarizeWithGemini({
-    announcements: rawData.announcements,
-    grades: rawData.grades,
-    calendar: rawData.calendar,
-    inbox: rawData.inboxList,
-  });
+  console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
+  const { summary, detectedEvents } = await summarizeWithGemini(
+    {
+      announcements: rawData.announcements,
+      grades: rawData.grades,
+      calendar: rawData.calendar,
+      inbox: rawData.inboxList,
+    },
+    child.name
+  );
+
+  return {
+    summary: toText(summary),
+    detectedEvents: Array.isArray(detectedEvents) ? detectedEvents : [],
+  };
+}
+
+// Łączy wyniki dzieci w jedno podsumowanie i jedną listę terminów.
+function buildCombined(results) {
+  const summary = results
+    .map((r) => {
+      const body = r.ok
+        ? r.summary || "Brak istotnych nowości."
+        : `⚠ Nie udało się pobrać danych: ${r.error}`;
+      return `── ${r.child.name} ──\n${body}`;
+    })
+    .join("\n\n");
+
+  const detectedEvents = results
+    .filter((r) => r.ok)
+    .flatMap((r) =>
+      r.detectedEvents.map((ev) => ({
+        ...ev,
+        title: `[${r.child.name}] ${ev.title}`,
+        child: r.child.name,
+      }))
+    )
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  return { summary, detectedEvents };
+}
+
+// Synchronizuje wszystkie dzieci jednego użytkownika (rodzica).
+// Zwraca "ok" albo "error" (gdy któreś dziecko się nie udało, ale inne tak).
+// Rzuca błąd tylko wtedy, gdy nie udało się żadne dziecko.
+async function syncUser(user) {
+  const children = user.children ?? [];
+  if (children.length === 0) {
+    throw new Error(`Brak listy "children" dla użytkownika ${user.displayName}`);
+  }
+
+  const userDocRef = db.collection("users").doc(user.firestoreUid);
+  const startedAt = admin.firestore.Timestamp.now();
+
+  const results = [];
+  for (const child of children) {
+    try {
+      results.push({ child, ok: true, ...(await syncChild(child)) });
+    } catch (err) {
+      console.error(`[${child.name}] BŁĄD:`, err.message);
+      results.push({ child, ok: false, error: err.message });
+    }
+  }
+
+  const okResults = results.filter((r) => r.ok);
+  const failed = results.filter((r) => !r.ok);
+  const errorText = failed.map((f) => `${f.child.name}: ${f.error}`).join(" | ");
+
+  if (okResults.length === 0) throw new Error(errorText);
+
+  const { summary, detectedEvents } = buildCombined(results);
+  const now = admin.firestore.Timestamp.now();
+
+  const childrenData = {};
+  for (const r of okResults) {
+    childrenData[r.child.secretSuffix] = {
+      name: r.child.name,
+      summary: r.summary,
+      detectedEvents: r.detectedEvents,
+      updatedAt: now,
+    };
+  }
+
+  const status = failed.length === 0 ? "ok" : "error";
 
   console.log(`[${user.displayName}] Zapis do Firestore...`);
   await userDocRef.set(
     {
       displayName: user.displayName,
-      librus: {
-        summary,
-        detectedEvents,
-        updatedAt: admin.firestore.Timestamp.now(),
-      },
-      lastSync: {
-        status: "ok",
-        timestamp: admin.firestore.Timestamp.now(),
-      },
+      librus: { summary, detectedEvents, children: childrenData, updatedAt: now },
+      lastSync:
+        status === "ok"
+          ? { status, timestamp: now, error: admin.firestore.FieldValue.delete() }
+          : { status, error: errorText, timestamp: now },
     },
     { merge: true }
   );
 
-  await syncHistoryRef.set({
+  await userDocRef.collection("syncHistory").add({
     startedAt,
     finishedAt: admin.firestore.Timestamp.now(),
-    status: "ok",
+    status,
     module: "librus",
+    children: results.map((r) => ({
+      name: r.child.name,
+      status: r.ok ? "ok" : "error",
+      ...(r.ok ? {} : { error: r.error }),
+    })),
   });
+
+  return status;
 }
 
 async function main() {
@@ -162,8 +245,8 @@ async function main() {
     }
 
     try {
-      await syncUser(user);
-      results.push({ user: user.displayName, status: "ok" });
+      const status = await syncUser(user);
+      results.push({ user: user.displayName, status });
     } catch (err) {
       console.error(`[${user.displayName}] BŁĄD:`, err.message);
       results.push({ user: user.displayName, status: "error", error: err.message });
@@ -196,9 +279,9 @@ async function main() {
 
   console.log("Podsumowanie synchronizacji:", results);
 
-  // Jeśli WSZYSCY użytkownicy się wysypali, niech workflow zakończy się błędem
-  // (żeby GitHub Actions wysłał Ci powiadomienie mailem o nieudanym uruchomieniu)
-  if (results.length > 0 && results.every((r) => r.status === "error")) {
+  // Jeśli cokolwiek się nie udało (nawet jedno dziecko), workflow kończy się błędem,
+  // żeby GitHub Actions wysłał Ci powiadomienie mailem o nieudanym uruchomieniu.
+  if (results.some((r) => r.status === "error")) {
     process.exit(1);
   }
 }
