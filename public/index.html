@@ -303,6 +303,7 @@
   nav button[aria-current="page"] { font-weight: 600; }
 
   .seg.two { grid-template-columns: repeat(2, 1fr); margin-top: 4px; }
+  [hidden] { display: none !important; }
   .calc { font-size: 0.8rem; color: var(--muted); margin: 0 0 6px; overflow-wrap: anywhere; }
 
 
@@ -437,7 +438,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-21 · 6"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-21 · 8"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const TZ = "Europe/Warsaw";
   const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
   const $ = (sel) => document.querySelector(sel);
@@ -680,7 +681,11 @@
   // ---------- oceny: średnie, wykres ----------
   const MONTHS = ["sty", "lut", "mar", "kwi", "maj", "cze", "lip", "sie", "wrz", "paź", "lis", "gru"];
   const curSem = () => { const m = new Date().getMonth() + 1; return m >= 2 && m <= 8 ? 2 : 1; };
-  const gradesOf = (c) => arr(c.extra?.gradeList);
+  const gradesOf = (c) =>
+    arr(c.extra?.gradeList).map((g) => {
+      const n = g.base == null ? letterMap[String(g.value).toUpperCase()] : null;
+      return n ? { ...g, base: n, num: n, letter: true } : g;
+    });
   const inScope = (g, sem) => sem === "all" || g.sem === 0 || g.sem === (sem === "cur" ? curSem() : Number(sem));
   // Do średniej liczą się oceny z cyfrą (także 4+ i 3-). Samo "+" lub "-" (bez cyfry), "np", "bz" i "nb" nie mają wartości liczbowej, więc się nie liczą.
   // Tryb liczenia: "librus" = tylko oceny, które nauczyciel oznaczył jako liczone do średniej; "all" = wszystkie oceny z cyfrą.
@@ -689,7 +694,20 @@
   const countable = (g) => !g.final && g.num != null && (avgMode === "all" || g.inAvg !== false);
   const plOcen = (n) => `${n} ${n === 1 ? "ocena" : n >= 2 && n <= 4 ? "oceny" : "ocen"}`;
   const fmtAvg = (v) => (v == null ? "–" : v.toFixed(2).replace(".", ","));
-  const gcls = (g) => (g.base >= 5 ? "g5" : g.base === 4 ? "g4" : g.base === 3 ? "g3" : g.base ? "g2" : "g0");
+  // Oceny literowe (edukacja wczesnoszkolna): każda litera odpowiada cyfrze, więc liczy się do średniej i ma kolor jak cyfra.
+  // Domyślna skala tej szkoły; można ją zmienić w Ustawieniach (format: F=6, W=5, B=4, D=3, P=2).
+  const DEFAULT_LETTERS = "F=6, W=5, B=4, D=3, P=2";
+  const parseLetterMap = (str) => {
+    const map = {};
+    const re = /([A-ZĄĆĘŁŃÓŚŹŻ]{1,3})\s*[-=:–—]\s*([1-6])/g;
+    const text = String(str || "").toUpperCase();
+    let m;
+    while ((m = re.exec(text))) map[m[1]] = Number(m[2]);
+    return map;
+  };
+  let letterMap = parseLetterMap(DEFAULT_LETTERS);
+  const letterClass = () => "g0";
+  const gcls = (g) => (g.base >= 5 ? "g5" : g.base === 4 ? "g4" : g.base === 3 ? "g3" : g.base ? "g2" : letterClass(g.value));
   const avgCls = (v) => (v == null ? "g0" : v >= 4.75 ? "g5" : v >= 3.75 ? "g4" : v >= 2.75 ? "g3" : "g2");
 
   function wavg(list) {
@@ -765,6 +783,7 @@
     const eff = state.gradeSem === "cur" ? String(curSem()) : state.gradeSem;
     const scoped = all.filter((g) => inScope(g, state.gradeSem));
     const today = todayISO();
+    const numericScoped = scoped.some(countable);
     const series = overallSeries(scoped);
     const cur = overallAt(scoped, today);
     const prev = overallAt(scoped, shiftISO(today, -30));
@@ -784,9 +803,9 @@
         : "Brak ocen liczonych do średniej.";
       const calcHtml = `<p class="calc">${calc}${skipped.length ? ` Nie liczą się: ${skipped.map((g) => esc(g.final ? `${g.value} (końcowa)` : g.inAvg === false ? `${g.value} (poza średnią)` : g.value)).join(", ")}.` : ""}</p>`;
       const rows = list.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((g) => `<li>
-        ${gradeChip(g)}<div class="main"><b>${esc(g.category || (g.final ? "Ocena końcowa" : "Ocena"))}</b>
+        ${gradeChip(g)}<div class="main"><b>${esc(g.category || (g.final ? "Ocena końcowa" : "Ocena"))}${g.letter ? ` <span class="sub">(${esc(g.value)} = ${g.num})</span>` : ""}</b>
         <small>${fmtDate(g.date)}${g.weight ? ` · waga ${g.weight}` : ""}${g.inAvg === false ? " · nie liczy się do średniej" : ""}${g.teacher ? " · " + esc(g.teacher) : ""}${g.comment ? "<br>" + esc(g.comment) : ""}</small></div></li>`).join("");
-      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa"><span class="avgpill ${avgCls(avg)}">${fmtAvg(avg)}</span><span class="ta">${trendArrow(avg != null && before != null ? avg - before : null)}</span></span><span class="sg">${chips}</span></summary>${calcHtml}<ul class="rows">${rows}</ul></details>`;
+      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa"><span class="avgpill ${avgCls(avg)}">${avg == null ? plOcen(list.length) : fmtAvg(avg)}</span><span class="ta">${trendArrow(avg != null && before != null ? avg - before : null)}</span></span><span class="sg">${chips}</span></summary>${calcHtml}<ul class="rows">${rows}</ul></details>`;
     }).join("");
 
     const seg = [["1", "Semestr I"], ["2", "Semestr II"], ["all", "Cały rok"]]
@@ -804,14 +823,14 @@
       : "";
 
     return `<div class="card">
-      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>średnia z ${(() => { const n = [...bySubject(scoped.filter((g) => g.date && g.date <= today)).values()].filter((l) => wavg(l) != null).length; return `${n} ${n === 1 ? "przedmiotu" : "przedmiotów"}`; })()}</small></div>
-        <div style="text-align:right"><div class="big">${fmtAvg(cur)}</div>${deltaHtml}</div></div>
+      <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>${numericScoped ? `średnia z ${(() => { const n = [...bySubject(scoped.filter((g) => g.date && g.date <= today)).values()].filter((l) => wavg(l) != null).length; return `${n} ${n === 1 ? "przedmiotu" : "przedmiotów"}`; })()}` : "oceny opisowe, bez średniej"}</small></div>
+        <div style="text-align:right"><div class="big">${numericScoped ? fmtAvg(cur) : scoped.length}</div>${numericScoped ? deltaHtml : `<div class="delta" style="color:var(--muted)">${plOcen(scoped.length).replace(/^\d+ /, "")}</div>`}</div></div>
       <div class="seg">${seg}</div>
-      <div class="seg two">${[["librus", "Jak w Librusie"], ["all", "Wszystkie oceny"]].map(([k, l]) => `<button data-avg="${k}" class="${avgMode === k ? "on" : ""}" aria-pressed="${avgMode === k}">${l}</button>`).join("")}</div>
+      <div class="seg two"${numericScoped ? "" : ' hidden'}>${[["librus", "Jak w Librusie"], ["all", "Wszystkie oceny"]].map(([k, l]) => `<button data-avg="${k}" class="${avgMode === k ? "on" : ""}" aria-pressed="${avgMode === k}">${l}</button>`).join("")}</div>
       ${avgNote}
       ${freshHtml}
-      <div class="sub-hd">Średnia w czasie</div>
-      ${gradeChart(series, `Wykres średniej: ${series.length ? fmtAvg(series[series.length - 1].v) : "brak danych"}`)}
+      ${numericScoped ? `<div class="sub-hd">Średnia w czasie</div>
+      ${gradeChart(series, `Wykres średniej: ${series.length ? fmtAvg(series[series.length - 1].v) : "brak danych"}`)}` : ""}
       <div class="sub-hd">Przedmioty</div>
       ${subjects || `<p class="empty">Brak ocen w wybranym okresie.</p>`}
     </div>`;
@@ -1108,8 +1127,36 @@
     render();
   }
 
+  function detectedLetters(d) {
+    const seen = [];
+    for (const k of getChildren(d)) {
+      for (const g of arr(k.extra?.gradeList)) {
+        const v = String(g.value || "").toUpperCase();
+        if (g.base == null && !g.final && /^[A-ZĄĆĘŁŃÓŚŹŻ]{1,3}$/.test(v) && !seen.includes(v)) seen.push(v);
+      }
+    }
+    return seen;
+  }
+  function saveScale() {
+    const value = (document.querySelector("#scale-input")?.value || "").trim().slice(0, 60);
+    const parsed = parseLetterMap(value);
+    letterMap = Object.keys(parsed).length ? parsed : parseLetterMap(DEFAULT_LETTERS);
+    state.scaleText = Object.keys(parsed).length ? value : "";
+    const ref = prefsRef();
+    if (ref) setDoc(ref, { letterScale: value }, { merge: true }).then(() => toast("Zapisano skalę.")).catch(() => toast("Nie udało się zapisać (sprawdź reguły Firestore).", true));
+    render();
+  }
+
   function settingsCard(d) {
     const kids = getChildren(d);
+    const letters = detectedLetters(d);
+    const unmapped = letters.filter((l) => !letterMap[l]);
+    const scaleHtml = letters.length
+      ? `<div class="fld-h" style="margin-top:16px">${icon("star")} Oceny literowe</div>
+         <p class="empty" style="margin:0 0 8px">Wykryte litery: <b>${esc(letters.join(", "))}</b>. Wpisz, jaką cyfrę oznacza każda z nich. Wtedy liczą się do średniej i mają kolor jak cyfry.${unmapped.length ? ` <span class="od">Bez przypisania: ${esc(unmapped.join(", "))}.</span>` : ""}</p>
+         <label class="fld"><span>Skala</span><input id="scale-input" value="${esc(state.scaleText || DEFAULT_LETTERS)}" placeholder="${esc(DEFAULT_LETTERS)}" maxlength="60" autocomplete="off" autocapitalize="characters" /></label>
+         <button id="save-scale" class="btn btn-small">Zapisz skalę</button>`
+      : "";
     const names = kids.length
       ? `<div class="fld-h">Imiona dzieci</div><p class="empty" style="margin:0 0 8px">Widoczne tylko w tej appce. W repozytorium i logach są same inicjały.</p>
         ${kids.map((k) => `<label class="fld c${k.idx}"><span><span class="tag c${k.idx}">${esc(k.baseName || k.key)}</span></span>
@@ -1132,7 +1179,7 @@
       notif = `<p class="empty" style="margin:0 0 8px">Dostaniesz alert o nowej ocenie, uwadze, nowym sprawdzianie oraz poranne i wieczorne podsumowanie.</p>
         <button id="push-on" class="btn btn-small">${icon("bell")} Włącz powiadomienia</button>`;
     }
-    return `<h2 class="sec">${icon("sliders")} Ustawienia</h2><div class="card">${names}<div class="fld-h" ${names ? 'style="margin-top:16px"' : ""}>${icon("bell")} Powiadomienia</div>${notif}</div>`;
+    return `<h2 class="sec">${icon("sliders")} Ustawienia</h2><div class="card">${names}${scaleHtml}<div class="fld-h" ${names || scaleHtml ? 'style="margin-top:16px"' : ""}>${icon("bell")} Powiadomienia</div>${notif}</div>`;
   }
 
   // Średnia i ostatnie oceny na kaflu dziecka (pulpit).
@@ -1147,7 +1194,7 @@
     const rows = latest.slice(0, 3).map((g) => `<div class="tg-row"><span class="n">${esc(g.subject)}</span>${gradeChip(g)}<span class="d">${esc(relDay(g.date))}</span></div>`).join("");
     const more = latest.length > 3 ? `<div class="tg-row"><span class="d">i ${latest.length - 3} więcej nowych ocen</span></div>` : "";
     return `<div class="tile-grades c${k.idx}">
-      ${avg != null ? `<span class="avgbadge">śr. ${fmtAvg(avg)} ${prev != null ? trendArrow(avg - prev) : ""}<span style="font-weight:400"> · z ${plOcen(scoped.filter((g) => g.date && countable(g)).length)}</span></span>` : `<span class="avgbadge">brak ocen w średniej</span>`}
+      ${avg == null && all.length ? `<span class="avgbadge">oceny opisowe · ${all.length}</span>` : avg != null ? `<span class="avgbadge">śr. ${fmtAvg(avg)} ${prev != null ? trendArrow(avg - prev) : ""}<span style="font-weight:400"> · z ${plOcen(scoped.filter((g) => g.date && countable(g)).length)}</span></span>` : ""}
       ${rows}${more}
     </div>`;
   }
@@ -1391,6 +1438,7 @@
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
     if (e.target.closest("#save-names")) { saveNames(); return; }
+    if (e.target.closest("#save-scale")) { saveScale(); return; }
     if (e.target.closest("#push-on")) { enablePush(); return; }
     if (e.target.closest("#push-off")) { disablePush(); return; }
     if (e.target.closest("#push-test")) { testPush(); return; }
@@ -1460,6 +1508,8 @@
       unsubPrefs = onSnapshot(doc(db, "users", user.uid, "prefs", "state"), (snap) => {
         state.prefs = "ok";
         state.names = (snap.exists() && snap.data().names) || {};
+        state.scaleText = (snap.exists() && snap.data().letterScale) || "";
+        { const parsed = parseLetterMap(state.scaleText); letterMap = Object.keys(parsed).length ? parsed : parseLetterMap(DEFAULT_LETTERS); }
         if (snap.exists()) {
           remoteDone = new Set(arr(snap.data().done));
           try { localStorage.setItem("libapp_done", JSON.stringify([...remoteDone])); } catch {}
