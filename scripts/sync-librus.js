@@ -21,7 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------- Ustawienia ----------
 const NEW_DAYS = 7; // co uznajemy za "nowe" (oceny, uwagi, wiadomości)
-const EVENTS_AHEAD_DAYS = 30; // jak daleko w przód szukamy wydarzeń
+const EVENTS_AHEAD_DAYS = 60; // jak daleko w przód szukamy wydarzeń (kalendarz w appce)
 const TZ = "Europe/Warsaw";
 
 // ---------- Firebase Admin ----------
@@ -209,6 +209,21 @@ function htmlToText(html) {
     .trim();
 }
 
+// Biblioteka do Librusa liczy miesiące od dzisiejszego dnia miesiąca, więc gdy miesiąc
+// docelowy ma mniej dni niż dziś (np. dziś 31., a cel to luty), data "przeskoczy".
+// Zwracamy tylko miesiące, dla których to nie grozi.
+function safeMonthsAhead(now, count) {
+  const out = [];
+  for (let k = 1; k <= count; k++) {
+    const target = new Date(now.getFullYear(), now.getMonth() + k, 1);
+    const daysInTarget = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+    if (daysInTarget >= now.getDate()) {
+      out.push({ month: target.getMonth() + 1, year: target.getFullYear() });
+    }
+  }
+  return out;
+}
+
 async function fetchLibrusData(login, password, today, since, until) {
   const client = new Librus();
   // UWAGA: biblioteka połyka błędy logowania, dlatego niżej sprawdzamy, czy
@@ -224,25 +239,18 @@ async function fetchLibrusData(login, password, today, since, until) {
     });
 
   const now = new Date();
-  const nextM = now.getMonth() + 2; // numer następnego miesiąca (1–12; 13 = styczeń)
-  const nextMonthNo = nextM > 12 ? 1 : nextM;
-  const nextMonthYear = nextM > 12 ? now.getFullYear() + 1 : undefined;
-  // Biblioteka liczy miesiące od dzisiejszego dnia miesiąca, więc po 28. dniu
-  // pobieranie kolejnego miesiąca mogłoby "przeskoczyć" — wtedy je pomijamy.
-  const canFetchNextMonth = now.getDate() <= 28;
+  const monthsAhead = safeMonthsAhead(now, 2); // kolejne 2 miesiące (okno 60 dni)
 
   const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml] =
     await Promise.all([
       safe("oceny", client.info.getGrades(), []),
       safe("ogłoszenia", client.inbox.listAnnouncements(), []),
       safe("terminarz", client.calendar.getCalendar(), []),
-      canFetchNextMonth
-        ? safe(
-            "terminarz (następny miesiąc)",
-            client.calendar.getCalendar(nextMonthNo, nextMonthYear),
-            []
-          )
-        : Promise.resolve([]),
+      Promise.all(
+        monthsAhead.map(({ month, year }) =>
+          safe(`terminarz ${year}-${pad2(month)}`, client.calendar.getCalendar(month, year), [])
+        )
+      ),
       safe("wiadomości", client.inbox.listInbox(6), []), // 6 = odebrane
       safe(
         "uwagi",
@@ -286,7 +294,7 @@ async function fetchLibrusData(login, password, today, since, until) {
     .map((e) => ({ data: normalizeDay(e.day), tytul: e.title }))
     .filter((e) => e.data && e.data >= today && e.data <= until)
     .sort((a, b) => a.data.localeCompare(b.data))
-    .slice(0, 80);
+    .slice(0, 120);
 
   const wiadomosci = asArray(inbox)
     .filter((m) => !m.read || (normalizeDay(m.date) ?? "9999") >= since)
