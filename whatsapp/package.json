@@ -1,0 +1,15 @@
+{
+  "name": "librus-whatsapp-module",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Moduł WhatsApp (etap 1: parowanie). Osobny package.json, żeby nie wpływał na synchronizację Librusa.",
+  "type": "module",
+  "scripts": {
+    "pair": "node pair.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "firebase-admin": "^12.1.0",
+    "pino": "^10.3.1"
+  }
+}
