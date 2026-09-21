@@ -1,0 +1,34 @@
+name: Sparuj WhatsApp
+
+# Ręczne, jednorazowe parowanie WhatsAppa jako "połączone urządzenie".
+# Kod parowania pojawia się w appce (Pulpit -> WhatsApp), nie w logach.
+on:
+  workflow_dispatch: {}
+
+concurrency:
+  group: whatsapp-pair
+  cancel-in-progress: false
+
+jobs:
+  pair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
+
+      - name: Instalacja Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instalacja zależności modułu WhatsApp
+        working-directory: whatsapp
+        run: npm install
+
+      - name: Parowanie WhatsAppa
+        working-directory: whatsapp
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+        run: npm run pair
