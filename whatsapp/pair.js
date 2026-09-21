@@ -22,7 +22,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
 } from "@whiskeysockets/baileys";
-import { useFirestoreAuthState } from "./auth-firestore.js";
+import { useFirestoreAuthState, resetAuthState } from "./auth-firestore.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PAIRING_TIMEOUT_MS = 5 * 60 * 1000;
@@ -63,7 +63,13 @@ async function main() {
     pairingCode: FieldValue.delete(),
   });
 
-  const { state, saveCreds, flush } = await useFirestoreAuthState(db, owner.firestoreUid);
+  let auth = await useFirestoreAuthState(db, owner.firestoreUid);
+  if (!auth.state.creds.registered) {
+    // Zostałości po nieudanej próbie parowania powodują błąd 401 — zaczynamy od czystej sesji.
+    await resetAuthState(db, owner.firestoreUid);
+    auth = await useFirestoreAuthState(db, owner.firestoreUid);
+  }
+  const { state, saveCreds, flush } = auth;
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
   const logger = pino({ level: "silent" });
 
@@ -123,7 +129,12 @@ async function main() {
             // Normalne tuż po wpisaniu kodu: trzeba nawiązać połączenie od nowa.
             start();
           } else if (status === DisconnectReason.loggedOut) {
-            reject(new Error("WhatsApp wylogował to urządzenie (401). Uruchom parowanie od nowa."));
+            // Sesja jest już bezużyteczna — czyścimy ją, żeby kolejne parowanie zaczęło od zera.
+            resetAuthState(db, owner.firestoreUid)
+              .catch(() => {})
+              .finally(() =>
+                reject(new Error("WhatsApp odrzucił sesję (401). Zapisana sesja została wyczyszczona — uruchom parowanie jeszcze raz."))
+              );
           } else {
             const reason = lastDisconnect?.error?.message;
             const since = codeAt ? Math.round((Date.now() - codeAt) / 1000) : null;
