@@ -304,6 +304,9 @@
   .msg-entry .chev .ic { width: 18px; height: 18px; transition: transform 0.15s; }
   .msg-entry[open] .chev .ic { transform: rotate(90deg); }
   .msg-body { white-space: pre-line; font-size: 0.92rem; padding: 0 0 12px 18px; color: var(--ink); overflow-wrap: anywhere; }
+  .attach { margin: 0 0 10px 18px; padding: 8px 10px; background: var(--bg); border-radius: 10px; font-size: 0.88rem; }
+  .attach b { display: flex; align-items: center; gap: 6px; font-weight: 600; }
+
 
   .ta { display: inline-block; width: 14px; text-align: center; }
   .od { color: var(--err); font-weight: 700; }
@@ -450,7 +453,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-22 · 12"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-22 · 13"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -1075,7 +1078,11 @@
       ? byDay.map((x) => `<div class="wk-day"><div class="wk-dh cap1">${esc(longDate(x.iso))}</div><ul class="rows">${x.events.map(({ ev, k }) => eventRow(ev, k, true)).join("")}${x.todos.map((t) => todoRow(t, false, false)).join("")}</ul></div>`).join("")
       : `<p class="empty">Spokojny tydzień: nic zaplanowanego.</p>`;
 
+    const narrative = d?.weeklyReview?.text && (Date.now() - (d.weeklyReview.atMs || 0) < 9 * 24 * 3600 * 1000)
+      ? `<p class="sum" style="margin:0 0 12px">${esc(d.weeklyReview.text)}</p>`
+      : "";
     return `<details class="card week"${open ? " open" : ""}><summary>${icon("week")} Przegląd tygodnia <span class="sub">${sunday ? "· na nowy tydzień" : ""}</span></summary>
+      ${narrative}
       <div class="wk-h">Miniony tydzień</div>${past}
       <div class="wk-h">Przed nami · ${esc(rangeLabel)}</div>
       <div class="wk-chips">
@@ -1363,7 +1370,14 @@
             <div class="main"><b>${esc(m.temat || "(bez tematu)")}</b><small>${esc(m.od)}${m.od && m.data ? " · " : ""}${esc(m.data || "")}</small></div>
             <span class="chev" aria-hidden="true">${icon("chevron")}</span></summary>
             <div class="msg-body">${m.tresc ? esc(m.tresc).replace(/\n/g, "<br>") : `<span class="sub">Treść pobierze się przy najbliższej synchronizacji.</span>`}</div>
-            ${arr(m.zalaczniki).length ? `<p class="sub">Załączniki: ${arr(m.zalaczniki).map(esc).join(", ")} (otwórz w Librusie)</p>` : ""}</details>`)
+            ${arr(m.zalaczniki).map((z) => {
+              const name = typeof z === "string" ? z : z?.name;
+              const a = typeof z === "object" ? z?.analysis : null;
+              if (!name) return "";
+              if (!a) return `<p class="sub">Załącznik: ${esc(name)} (otwórz w Librusie)</p>`;
+              const bits = [a.termin ? `termin: ${fmtDate(a.termin)}` : "", a.kwota ? `kwota: ${esc(a.kwota)}` : "", a.doZrobienia ? esc(a.doZrobienia) : ""].filter(Boolean).join(" · ");
+              return `<div class="attach"><b>${icon("book")} ${esc(name)}</b><p class="sub" style="margin:2px 0 0">${esc(a.opis)}${bits ? " — " + bits : ""}</p></div>`;
+            }).join("")}</details>`)
           .join("")
       : s.messages
           .map((m) => `<li><span class="${m.unread ? "unread" : "read"}" aria-label="${m.unread ? "nieprzeczytana" : "przeczytana"}"></span>
@@ -1379,6 +1393,10 @@
         <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}${c.extra?.luckyNumber != null ? ` · ${icon("sparkle")} numerek ${esc(c.extra.luckyNumber)}` : ""}</small></div></div>
       ${c.lastError ? `<div class="warnbox">Ostatnie odświeżenie się nie udało: ${esc(c.lastError)}. Widać dane z poprzedniej synchronizacji.</div>` : ""}
       ${c.summary ? `<div class="card"><p class="sum" style="margin:0">${esc(c.summary)}</p></div>` : ""}
+      ${(c.insights?.grades || c.insights?.remarks) ? `<div class="card"><div class="sect-title"><h3>${icon("sparkle")} Zauważyłem</h3></div>
+        ${c.insights.grades ? `<p class="sum" style="margin:0 0 6px"><span title="oceny">${icon("star")}</span> ${esc(c.insights.grades)}</p>` : ""}
+        ${c.insights.remarks ? `<p class="sum" style="margin:0"><span title="uwagi">${icon("alert")}</span> ${esc(c.insights.remarks)}</p>` : ""}
+      </div>` : ""}
       ${hasSections ? `
         ${c.extra?.gradeList ? gradesSection(c) : section("star", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
         ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
