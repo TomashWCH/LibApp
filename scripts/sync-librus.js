@@ -37,6 +37,15 @@ const db = admin.firestore();
 const usersConfigPath = path.join(__dirname, "users.config.json");
 const { users } = JSON.parse(readFileSync(usersConfigPath, "utf-8"));
 
+// ---------- Godzina i dzień tygodnia w Warszawie (do przeglądu tygodnia) ----------
+function warsawNowParts(date = new Date()) {
+  const hour = Number(date.toLocaleString("en-GB", { timeZone: TZ, hour: "2-digit", hour12: false }).slice(0, 2)) % 24;
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(
+    date.toLocaleDateString("en-US", { timeZone: TZ, weekday: "short" })
+  );
+  return { hour, weekday }; // weekday: 0 = niedziela
+}
+
 // ---------- Daty ----------
 function isoInWarsaw(date) {
   return date.toLocaleDateString("sv-SE", { timeZone: TZ }); // YYYY-MM-DD
@@ -64,14 +73,15 @@ const RETRY_DELAYS_MS = [5000, 15000, 30000, 60000]; // 5 prob: od razu, po 5 s,
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Wywołuje Gemini; przy chwilowych błędach (np. 503 "high demand") ponawia z przerwami.
-async function callGemini(model, prompt) {
+async function callGemini(model, promptOrParts) {
+  const parts = Array.isArray(promptOrParts) ? promptOrParts : [{ text: promptOrParts }];
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
   for (let attempt = 0; ; attempt++) {
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
+        contents: [{ parts }],
         generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
       }),
     });
@@ -105,6 +115,10 @@ function normalizeAi(obj) {
   const o = Array.isArray(obj) ? obj[0] ?? {} : obj ?? {};
   return {
     summary: toText(o.summary),
+    insights: {
+      grades: nul(o.gradeInsight),
+      remarks: nul(o.remarkPattern),
+    },
     sections: {
       grades: asArray(o.grades).map((g) => ({
         subject: str(g.subject),
@@ -137,7 +151,7 @@ function normalizeAi(obj) {
   };
 }
 
-async function summarizeWithGemini(rawData, childName, today, since) {
+async function summarizeWithGemini(rawData, childName, today, since, gradeTrends) {
   const prompt = `
 Jesteś asystentem podsumowującym dziennik elektroniczny Librus dla rodzica.
 Dane dotyczą dziecka: ${childName}.
@@ -166,10 +180,24 @@ Z poniższych danych JSON przygotuj obiekt z polami:
    [{"from": string, "subject": string, "date": string albo null,
    "unread": true/false, "kind": "wiadomość" | "ogłoszenie"}].
 
+6. "gradeInsight" — string albo null. Jedno krótkie zdanie po polsku o zauważalnym
+   trendzie w ocenach, na podstawie pola "trendy_ocen" poniżej (już policzonych
+   zmian średniej w ostatnich 30 dniach per przedmiot). Wybierz najbardziej
+   znaczący trend (największa zmiana, zwłaszcza spadek). Jeśli "trendy_ocen"
+   jest puste, ustaw null. Nie wymyślaj liczb spoza "trendy_ocen".
+
+7. "remarkPattern" — string albo null. Jeśli w polu "remarks" (patrz punkt 3)
+   znajdziesz 3 lub więcej wpisów, jedno krótkie zdanie po polsku opisujące,
+   co się powtarza (np. podobny powód, ten sam nauczyciel, częstotliwość).
+   W przeciwnym razie null.
+
 Puste sekcje zwracaj jako []. Odpowiedz WYŁĄCZNIE poprawnym JSON-em.
 
 Dane wejściowe:
 ${JSON.stringify(rawData)}
+
+Trendy ocen (już policzone, do punktu 6):
+${JSON.stringify(gradeTrends)}
 `.trim();
 
   let data;
@@ -266,9 +294,102 @@ function parseTimetable(res, mondayISO) {
 const MESSAGE_BODY_LIMIT = 20; // ile wiadomości max pobieramy w jednej synchronizacji (nieprzeczytane najpierw)
 const MESSAGE_BODY_CONCURRENCY = 3;
 
+// ---------- Załączniki PDF: pobranie i streszczenie przez Gemini (z pamięcią wyników) ----------
+const PDF_NEW_LIMIT = 3; // ile NOWYCH załączników max analizujemy w jednej synchronizacji (biblioteka do Librusa bywa tu wolna/kapryśna)
+const PDF_MAX_BYTES = 15 * 1024 * 1024; // limit wielkości pliku wysyłanego do Gemini
+const PDF_TIMEOUT_MS = 25000; // twardy limit czasu na pobranie JEDNEGO załącznika — nie blokujemy reszty synchronizacji
+
+function withTimeout(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`przekroczono limit czasu (${label})`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Biblioteka do Librusa zwraca plik jako strumień (czasem Buffer/string) — ujednolicamy do Buffer.
+function toBuffer(data) {
+  if (Buffer.isBuffer(data)) return Promise.resolve(data);
+  if (typeof data === "string") return Promise.resolve(Buffer.from(data, "binary"));
+  if (data && typeof data.on === "function") {
+    return new Promise((resolve, reject) => {
+      const chunks = [];
+      data.on("data", (c) => chunks.push(c));
+      data.on("end", () => resolve(Buffer.concat(chunks)));
+      data.on("error", reject);
+    });
+  }
+  return Promise.reject(new Error("nieznany format odpowiedzi pliku"));
+}
+
+// Pobiera i streszcza JEDEN załącznik PDF. Nigdy nie rzuca dalej — przy jakimkolwiek
+// problemie (pobranie, rozmiar, format, Gemini) zwraca null, a wiadomość zostaje bez analizy.
+async function analyzePdfAttachment(client, path, name) {
+  if (!/\.pdf$/i.test(String(name || ""))) return null;
+  let buf;
+  try {
+    const raw = await withTimeout(client.inbox.getFile(path), PDF_TIMEOUT_MS, `pobieranie ${name}`);
+    buf = await toBuffer(raw);
+  } catch (err) {
+    console.warn(`  ! nie udało się pobrać załącznika "${name}": ${err.message}`);
+    return null;
+  }
+  if (buf.length === 0 || buf.length > PDF_MAX_BYTES) {
+    console.warn(`  ! pomijam załącznik "${name}" — nieprawidłowy lub zbyt duży rozmiar (${buf.length} B)`);
+    return null;
+  }
+  if (buf.slice(0, 4).toString("latin1") !== "%PDF") {
+    console.warn(`  ! pomijam załącznik "${name}" — to nie jest plik PDF`);
+    return null;
+  }
+
+  const prompt = `
+Poniższy plik PDF to załącznik do wiadomości ze szkolnego dziennika elektronicznego
+(zgoda, zbiórka, informacja od nauczyciela itp.). Wyciągnij PO POLSKU z tego dokumentu:
+
+1. "opis" — jedno krótkie zdanie, czego dokument dotyczy.
+2. "termin" — "YYYY-MM-DD" jeśli w dokumencie jest konkretna data, albo null.
+3. "kwota" — kwota do zapłaty jako string (np. "25 zł") jeśli jest, albo null.
+4. "doZrobienia" — string albo null: co rodzic/uczeń ma zrobić lub przynieść
+   (np. podpisać i oddać, przynieść strój). Krótko, jedno zdanie.
+
+Jeśli dokumentu nie da się sensownie streścić (np. nieczytelny skan), ustaw
+wszystkie pola poza "opis" na null, a "opis" na "Nie udało się odczytać dokumentu."
+
+Odpowiedz WYŁĄCZNIE poprawnym JSON-em z dokładnie tymi czterema polami.
+`.trim();
+
+  const parts = [{ text: prompt }, { inlineData: { mimeType: "application/pdf", data: buf.toString("base64") } }];
+  try {
+    let data;
+    try {
+      data = await withTimeout(callGemini(GEMINI_MODEL, parts), PDF_TIMEOUT_MS, `analiza ${name}`);
+    } catch (err) {
+      const canFallback = GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== GEMINI_MODEL && RETRY_STATUS.has(err.status);
+      if (!canFallback) throw err;
+      data = await withTimeout(callGemini(GEMINI_FALLBACK_MODEL, parts), PDF_TIMEOUT_MS, `analiza ${name}`);
+    }
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) return null;
+    const cleaned = text.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+    const p = JSON.parse(cleaned);
+    return {
+      opis: cleanText(p.opis, 200),
+      termin: normalizeDay(p.termin),
+      kwota: cleanText(p.kwota, 30) || null,
+      doZrobienia: cleanText(p.doZrobienia, 200) || null,
+    };
+  } catch (err) {
+    console.warn(`  ! nie udało się przeanalizować załącznika "${name}": ${err.message}`);
+    return null;
+  }
+}
+
 // Pobiera pełną treść wybranych wiadomości (limit + kilka równolegle). Błąd pojedynczej
 // wiadomości nie przerywa reszty — po prostu nie będzie miała treści do podglądu w appce.
-async function fetchMessageBodies(client, wiadomosciZrodlo) {
+// attachmentCache: Map "messageId:nazwaPliku" -> wcześniej policzona analiza PDF (żeby nie
+// płacić za to samo dwa razy przy każdej synchronizacji).
+async function fetchMessageBodies(client, wiadomosciZrodlo, attachmentCache = new Map()) {
   const candidates = wiadomosciZrodlo
     .filter((m) => Number.isFinite(m.id))
     .sort((a, b) => Number(!!a.read) - Number(!!b.read)) // nieprzeczytane (read: false) najpierw
@@ -277,11 +398,25 @@ async function fetchMessageBodies(client, wiadomosciZrodlo) {
   const out = [];
   let i = 0;
   let failed = 0;
+  let pdfBudget = PDF_NEW_LIMIT;
   const worker = async () => {
     while (i < candidates.length) {
       const m = candidates[i++];
       try {
         const full = await client.inbox.getMessage(6, m.id); // 6 = folder "Odebrane"
+        const files = asArray(full?.files);
+        const zalaczniki = [];
+        for (const f of files) {
+          const name = cleanText(f?.name, 100);
+          if (!name) continue;
+          const cacheKey = `${m.id}:${name}`;
+          let analysis = attachmentCache.get(cacheKey) ?? null;
+          if (!analysis && pdfBudget > 0 && /\.pdf$/i.test(name) && f?.path) {
+            pdfBudget--;
+            analysis = await analyzePdfAttachment(client, f.path, name);
+          }
+          zalaczniki.push({ name, analysis });
+        }
         out.push({
           id: m.id,
           od: cleanText(m.user, 80),
@@ -289,9 +424,7 @@ async function fetchMessageBodies(client, wiadomosciZrodlo) {
           data: cleanText(m.date, 30),
           nieprzeczytana: !m.read,
           tresc: cleanText(full?.content, 4000),
-          zalaczniki: asArray(full?.files)
-            .map((f) => cleanText(f?.name, 100))
-            .filter(Boolean),
+          zalaczniki,
         });
       } catch {
         failed++;
@@ -302,6 +435,33 @@ async function fetchMessageBodies(client, wiadomosciZrodlo) {
 
   if (failed) console.warn(`  ! nie udało się pobrać treści ${failed} wiadomości (temat/nadawca zostają widoczne, bez pełnego tekstu)`);
   return out;
+}
+
+// ---------- Trendy ocen (JS, bez Gemini) — do wplecenia w istniejący prompt podsumowania ----------
+// Do średniej liczą się oceny z cyfrą, których nauczyciel nie wyłączył ze średniej (jak w Librusie).
+function computeGradeTrends(gradeList, today) {
+  const countable = (g) => !g.final && g.inAvg !== false && g.num != null;
+  const bySubject = new Map();
+  for (const g of gradeList) {
+    if (!countable(g)) continue;
+    if (!bySubject.has(g.subject)) bySubject.set(g.subject, []);
+    bySubject.get(g.subject).push(g);
+  }
+  const wavg = (list) => {
+    let sw = 0, sum = 0;
+    for (const g of list) { const w = g.weight || 1; sw += w; sum += g.num * w; }
+    return sw ? sum / sw : null;
+  };
+  const since30 = addDaysISO(today, -30);
+  const out = [];
+  for (const [subject, list] of bySubject) {
+    const now = wavg(list.filter((g) => g.date && g.date <= today));
+    const before = wavg(list.filter((g) => g.date && g.date <= since30));
+    if (now == null || before == null) continue;
+    const delta = Math.round((now - before) * 100) / 100;
+    if (Math.abs(delta) >= 0.4) out.push({ subject, avgNow: Math.round(now * 100) / 100, deltaOstatnie30dni: delta });
+  }
+  return out.sort((a, b) => Math.abs(b.deltaOstatnie30dni) - Math.abs(a.deltaOstatnie30dni)).slice(0, 3);
 }
 
 // ---------- Pełna lista ocen (bez Gemini) ----------
@@ -572,7 +732,7 @@ const isoLike = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ""));
 // Firestore nie przyjmuje undefined/NaN — czyścimy przez JSON.
 const clean = (v) => JSON.parse(JSON.stringify(v ?? null));
 
-async function fetchLibrusData(login, password, today, since, until) {
+async function fetchLibrusData(login, password, today, since, until, attachmentCache) {
   const client = new Librus();
   // UWAGA: biblioteka połyka błędy logowania, dlatego niżej sprawdzamy, czy
   // Librus w ogóle zwrócił jakiekolwiek dane.
@@ -685,7 +845,7 @@ async function fetchLibrusData(login, password, today, since, until) {
 
   const uwagiTekst = htmlToText(remarksHtml).slice(0, 12000);
 
-  const messageBodies = await fetchMessageBodies(client, wiadomosciZrodlo);
+  const messageBodies = await fetchMessageBodies(client, wiadomosciZrodlo, attachmentCache);
 
   const extra = {
     timetable: asArray(timetableWeeks)
@@ -708,7 +868,7 @@ async function fetchLibrusData(login, password, today, since, until) {
 
 // ---------- Synchronizacja ----------
 // Pobiera i streszcza dane jednego dziecka.
-async function syncChild(child) {
+async function syncChild(child, attachmentCache) {
   const loginEnv = `LIBRUS_LOGIN_${child.secretSuffix}`;
   const passEnv = `LIBRUS_PASSWORD_${child.secretSuffix}`;
   const login = process.env[loginEnv];
@@ -724,11 +884,12 @@ async function syncChild(child) {
   const until = isoInWarsaw(shiftDays(nowDate, EVENTS_AHEAD_DAYS));
 
   console.log(`[${child.name}] Logowanie do Librusa i pobieranie danych...`);
-  const raw = await fetchLibrusData(login, password, today, since, until);
+  const raw = await fetchLibrusData(login, password, today, since, until, attachmentCache);
 
   console.log(
     `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"})`
   );
+  const gradeTrends = computeGradeTrends(raw.extra.gradeList, today);
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
   const ai = await summarizeWithGemini(
     {
@@ -740,9 +901,76 @@ async function syncChild(child) {
     },
     child.name,
     today,
-    since
+    since,
+    gradeTrends
   );
   return { ...ai, extra: raw.extra };
+}
+
+// ---------- Przegląd tygodnia (1 zapytanie do Gemini, tylko w niedzielę wieczorem) ----------
+const EXAM_RE = /kartk|sprawdzian|klas[oó]wk|\btest\b|egzamin|dyktand/i;
+
+// Zbiera zwięzłe liczby z już policzonych danych dzieci — bez wysyłania pełnej treści do Gemini.
+function buildWeeklyStats(results, today) {
+  const since7 = addDaysISO(today, -7);
+  const until7 = addDaysISO(today, 7);
+  return results
+    .filter((r) => r.ok)
+    .map((r) => {
+      const grades7 = (r.extra.gradeList || []).filter((g) => g.date && g.date >= since7 && !g.final);
+      const remarks7 = (r.sections.remarks || []).filter((x) => x.date && x.date >= since7);
+      const absence7 = (r.extra.absence?.days || []).filter((d) => d.date >= since7);
+      const upcoming = (r.sections.events || []).filter((e) => e.date && e.date > today && e.date <= until7);
+      const exams = upcoming.filter((e) => EXAM_RE.test(e.title || ""));
+      return {
+        dziecko: r.child.name,
+        noweOcenyTydzien: grades7.map((g) => ({ przedmiot: g.subject, ocena: g.value })),
+        uwagiTydzien: remarks7.length,
+        nieobecnosciTydzien: absence7.reduce((n, d) => n + Object.values(d.counts).reduce((a, b) => a + b, 0), 0),
+        sprawdzianyPrzedNami: exams.map((e) => ({ tytul: e.title, data: e.date })),
+        innychTerminowPrzedNami: upcoming.length - exams.length,
+      };
+    });
+}
+
+async function generateWeeklyReview(userDocRef, results, today) {
+  const stats = buildWeeklyStats(results, today);
+  if (!stats.length) return;
+
+  const prompt = `
+Jesteś ciepłym, rzeczowym asystentem rodzica. Poniżej masz policzone dane o dzieciach
+z ostatniego tygodnia (od ${addDaysISO(today, -7)}) i na kolejny (do ${addDaysISO(today, 7)}).
+Napisz PO POLSKU krótki, przyjazny przegląd tygodnia dla rodzica, 2-4 zdania łącznie
+(nie per dziecko — jeden spójny akapit o obojgu/wszystkich dzieciach). Wspomnij, co
+się wydarzyło i na co warto zwrócić uwagę w nadchodzącym tygodniu. Nie wymyślaj
+faktów spoza danych. Jeśli dane są bardzo skromne, napisz to krótko i spokojnie.
+
+Odpowiedz WYŁĄCZNIE poprawnym JSON-em: {"text": string}.
+
+Dane:
+${JSON.stringify(stats)}
+`.trim();
+
+  let data;
+  try {
+    data = await callGemini(GEMINI_MODEL, prompt);
+  } catch (err) {
+    const canFallback = GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== GEMINI_MODEL && RETRY_STATUS.has(err.status);
+    if (!canFallback) throw err;
+    data = await callGemini(GEMINI_FALLBACK_MODEL, prompt);
+  }
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Pusta odpowiedź z Gemini (przegląd tygodnia)");
+  const cleaned = text.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  const parsed = JSON.parse(cleaned);
+  const reviewText = toText(parsed?.text).trim();
+  if (!reviewText) return;
+
+  await userDocRef.set(
+    { weeklyReview: { text: reviewText, dateISO: today, atMs: Date.now() } },
+    { merge: true }
+  );
+  console.log(`[${userDocRef.id}] Przegląd tygodnia zapisany.`);
 }
 
 // Łączy wyniki dzieci w jedno podsumowanie i jedną listę terminów
@@ -783,10 +1011,29 @@ async function syncUser(user) {
   const userDocRef = db.collection("users").doc(user.firestoreUid);
   const startedAt = admin.firestore.Timestamp.now();
 
+  // Pamięć wcześniej przeanalizowanych załączników PDF (per dziecko) — żeby nie płacić
+  // za tę samą analizę przy każdej synchronizacji. Brak poprzednich danych = pusta pamięć,
+  // to normalne przy pierwszym uruchomieniu.
+  let previousChildren = {};
+  try {
+    previousChildren = (await userDocRef.get()).data()?.librus?.children ?? {};
+  } catch (err) {
+    console.warn(`  ! nie udało się odczytać poprzednich danych (pamięć załączników będzie pusta): ${err.message}`);
+  }
+  const buildAttachmentCache = (secretSuffix) => {
+    const cache = new Map();
+    for (const msg of asArray(previousChildren[secretSuffix]?.extra?.messages)) {
+      for (const att of asArray(msg?.zalaczniki)) {
+        if (att?.name && att?.analysis) cache.set(`${msg.id}:${att.name}`, att.analysis);
+      }
+    }
+    return cache;
+  };
+
   const results = [];
   for (const child of children) {
     try {
-      results.push({ child, ok: true, ...(await syncChild(child)) });
+      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix))) });
     } catch (err) {
       console.error(`[${child.name}] BŁĄD:`, err.message);
       results.push({ child, ok: false, error: err.message });
@@ -808,6 +1055,7 @@ async function syncUser(user) {
       ? {
           name: r.child.name,
           summary: r.summary,
+          insights: clean(r.insights),
           sections: r.sections,
           extra: clean(r.extra),
           updatedAt: now,
@@ -853,6 +1101,22 @@ async function syncUser(user) {
       ...(r.ok ? {} : { error: r.error }),
     })),
   });
+
+  // Przegląd tygodnia: tylko w niedzielę wieczorem (jedno z trzech dziennych uruchomień),
+  // i tylko raz danego dnia. Osobne, oszczędne zapytanie do Gemini — błąd nie psuje
+  // reszty synchronizacji, która już się zapisała powyżej.
+  const { hour, weekday } = warsawNowParts();
+  const todayIso = isoInWarsaw(new Date());
+  if (weekday === 0 && hour >= 18) {
+    try {
+      const existing = (await userDocRef.get()).data() || {};
+      if (existing.weeklyReview?.dateISO !== todayIso) {
+        await generateWeeklyReview(userDocRef, results, todayIso);
+      }
+    } catch (err) {
+      console.warn(`  ! Przegląd tygodnia się nie udał: ${err.message}`);
+    }
+  }
 
   return status;
 }
