@@ -284,7 +284,7 @@ function makeGrade(subjectName, g) {
   const weight = parseInt(infoField(g.info, "Waga"), 10);
   const month = date ? Number(date.slice(5, 7)) : null;
   return {
-    id: Number.isFinite(g.id) ? g.id : null,
+    id: Number.isFinite(g.id) && g.id > 0 ? g.id : null, // id=0 to placeholder Librusa (dekoracja), nie prawdziwa ocena
     subject: cleanText(subjectName, 60) || "Inne oceny",
     value,
     base,
@@ -318,7 +318,7 @@ function buildGradeList(subjects, boxes = []) {
     // Prawdziwa ocena zawsze ma albo numeryczny identyfikator (link do szczegolow oceny),
     // albo nazwe przedmiotu. Pole bez jednego i drugiego to zwykle cos innego znalezione
     // przy okazji na stronie (np. legenda kolorow ze skala ocen) - pomijamy je.
-    if (b && cleanText(b.value, 6) && (Number.isFinite(b.id) || cleanText(b.subject || b.section, 60))) {
+    if (b && cleanText(b.value, 6) && ((Number.isFinite(b.id) && b.id > 0) || cleanText(b.subject || b.section, 60))) {
       add(b.subject || b.section, b);
     }
   }
