@@ -5,7 +5,7 @@ import { fmtTime } from "./lib.js";
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite";
 const FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.6-flash"; // gemini-2.5-flash zostal wycofany 22.09.2026
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
-const RETRY_DELAYS_MS = [5000, 15000, 30000];
+const RETRY_DELAYS_MS = [5000, 15000, 30000, 60000];
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function callGemini(model, prompt) {
