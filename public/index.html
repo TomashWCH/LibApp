@@ -438,7 +438,11 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-21 · 9"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-22 · 11"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
+  // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
+  // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
+  const OWNER_UID = "0mlgSYJpp7fSoCdl4BmTSSZId9s2";
   const TZ = "Europe/Warsaw";
   const CAL_SCOPE = "https://www.googleapis.com/auth/calendar.events";
   const $ = (sel) => document.querySelector(sel);
@@ -853,7 +857,7 @@
   function localDone() {
     try { return new Set(JSON.parse(localStorage.getItem("libapp_done") || "[]")); } catch { return new Set(); }
   }
-  const prefsRef = () => (auth.currentUser ? doc(db, "users", auth.currentUser.uid, "prefs", "state") : null);
+  const prefsRef = () => (auth.currentUser ? doc(db, "users", OWNER_UID, "prefs", "state") : null);
   function pushDone(ids) {
     const ref = prefsRef();
     if (!ref) return;
@@ -1053,7 +1057,7 @@
     const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
     return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
   }
-  const pushRef = () => (auth.currentUser ? doc(db, "users", auth.currentUser.uid, "prefs", "push") : null);
+  const pushRef = () => (auth.currentUser ? doc(db, "users", OWNER_UID, "prefs", "push") : null);
 
   async function savePushSub(sub) {
     const ref = pushRef();
@@ -1352,6 +1356,12 @@
       const time = fmtStamp(d.lastSync.timestamp);
       if (d.lastSync.status === "ok") { dot.className = "dot ok"; text.textContent = `Ostatnia synchronizacja: ${time}`; }
       else { dot.className = "dot error"; text.textContent = `Błąd synchronizacji (${time}): ${d.lastSync.error ?? ""}`; }
+    } else {
+      // Dane doszły (bez błędu), ale bez pola lastSync — zwykle pierwsza synchronizacja jeszcze
+      // się nie odbyła. Bez tego pasek zostawałby na "Wczytywanie..." bez końca, co utrudnia
+      // rozpoznanie, czy appka w ogóle dostała odpowiedź z bazy.
+      dot.className = "dot pending";
+      text.textContent = "Czekam na pierwszą synchronizację.";
     }
   }
 
@@ -1503,9 +1513,9 @@
       $("#app-screen").style.display = "block";
       $("#greeting").textContent = `Cześć, ${user.displayName?.split(" ")[0] || ""}!`;
       // user.uid musi być wpisany do scripts/users.config.json (firestoreUid)
-      unsubscribe = onSnapshot(doc(db, "users", user.uid), (snap) => { state.data = snap.data() || null; render(); },
+      unsubscribe = onSnapshot(doc(db, "users", OWNER_UID), (snap) => { state.data = snap.data() || null; render(); },
         (err) => { $("#sync-dot").className = "dot error"; $("#sync-text").textContent = "Brak dostępu do danych: " + err.message; });
-      unsubPrefs = onSnapshot(doc(db, "users", user.uid, "prefs", "state"), (snap) => {
+      unsubPrefs = onSnapshot(doc(db, "users", OWNER_UID, "prefs", "state"), (snap) => {
         state.prefs = "ok";
         state.names = (snap.exists() && snap.data().names) || {};
         state.scaleText = (snap.exists() && snap.data().letterScale) || "";
