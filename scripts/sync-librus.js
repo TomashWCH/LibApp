@@ -272,6 +272,9 @@ function infoField(info, label) {
 // num: wartość liczbowa (plus = +0,5, minus = -0,25); base: 1–6; final: ocena śródroczna/roczna/przewidywana.
 // Oceny bez cyfry (np. literowe F, W, B, D, P) trafiają na listę z base = null: są widoczne, ale nie liczą się do średniej.
 function makeGrade(subjectName, g) {
+  if (!cleanText(subjectName, 1)) {
+    console.warn(`  ! nie ustalono przedmiotu dla oceny "${g.value}" (id=${g.id ?? "brak"}) - trafi jako "Inne oceny"`);
+  }
   const value = cleanText(g.value, 6);
   const m = value.match(/^([1-6])([+-])?$/);
   const base = m ? Number(m[1]) : null;
@@ -327,7 +330,7 @@ function buildGradeList(subjects, boxes = []) {
 // Wszystkie pola ocen na stronie ocen (biblioteka czyta tylko główną tabelę, więc oceny z innych
 // tabel — np. literowe — mogłyby zostać pominięte). Zwraca też przedmiot i nagłówek tabeli.
 function fetchAllGradeBoxes(client) {
-  return client._mapper("przegladaj_oceny/uczen", "span.grade-box", ($, el) => {
+  return client._mapper("przegladaj_oceny/uczen", "table.decorated span.grade-box", ($, el) => {
     const $el = $(el);
     const a = $el.find("a").first();
     const clean = (t) => String(t ?? "").replace(/\s+/g, " ").trim();
