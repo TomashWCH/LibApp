@@ -60,7 +60,7 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite"; // naz
 // Model zapasowy — używany, gdy główny jest przeciążony mimo ponowień (503/429/5xx).
 const GEMINI_FALLBACK_MODEL = process.env.GEMINI_FALLBACK_MODEL || "gemini-3.6-flash"; // gemini-2.5-flash zostal wycofany 22.09.2026
 const RETRY_STATUS = new Set([429, 500, 502, 503, 504]);
-const RETRY_DELAYS_MS = [5000, 15000, 30000]; // 4 próby: od razu, po 5 s, 15 s, 30 s
+const RETRY_DELAYS_MS = [5000, 15000, 30000, 60000]; // 5 prob: od razu, po 5 s, 15 s, 30 s, 60 s
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // Wywołuje Gemini; przy chwilowych błędach (np. 503 "high demand") ponawia z przerwami.
