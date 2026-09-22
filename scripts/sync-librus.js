@@ -312,7 +312,12 @@ function buildGradeList(subjects, boxes = []) {
     for (const sem of asArray(s.semester)) for (const g of asArray(sem?.grades)) add(s.name, g);
   }
   for (const b of asArray(boxes)) {
-    if (b && cleanText(b.value, 6)) add(b.subject || b.section, b);
+    // Prawdziwa ocena zawsze ma albo numeryczny identyfikator (link do szczegolow oceny),
+    // albo nazwe przedmiotu. Pole bez jednego i drugiego to zwykle cos innego znalezione
+    // przy okazji na stronie (np. legenda kolorow ze skala ocen) - pomijamy je.
+    if (b && cleanText(b.value, 6) && (Number.isFinite(b.id) || cleanText(b.subject || b.section, 60))) {
+      add(b.subject || b.section, b);
+    }
   }
   return out
     .sort((a, b) => String(a.date ?? "").localeCompare(String(b.date ?? "")))
