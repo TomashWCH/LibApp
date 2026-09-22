@@ -23,25 +23,38 @@ jobs:
     outputs:
       run: ${{ steps.check.outputs.run }}
     steps:
-      - name: Sprawdzenie pory (czas polski)
+      - name: Sprawdzenie, który wpis harmonogramu odpalił zadanie
         id: check
         env:
           EVENT: ${{ github.event_name }}
+          SCHEDULE: ${{ github.event.schedule }}
         run: |
-          HOUR=$(TZ=Europe/Warsaw date +%H)
-          echo "Czas w Polsce: $(TZ=Europe/Warsaw date +%H:%M)"
-          # Okna godzinowe zamiast pojedynczych godzin — GitHub potrafi opóźnić zaplanowane
-          # zadanie o godzinę i więcej, zwłaszcza wcześnie rano; szersze okno nie gubi wtedy
-          # całego przebiegu. Każde okno i tak uruchamia się tylko raz, bo w danej godzinie
-          # trafia tylko jeden z dwóch wpisów cron (lato/zima).
-          if [ "$EVENT" = "workflow_dispatch" ] || \
-             [ "$HOUR" -ge 07 -a "$HOUR" -le 08 ] || \
-             [ "$HOUR" -ge 16 -a "$HOUR" -le 17 ] || \
-             [ "$HOUR" -ge 19 -a "$HOUR" -le 20 ]; then
+          echo "Zdarzenie: $EVENT — wpis harmonogramu: ${SCHEDULE:-(ręczne uruchomienie)}"
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # GitHub potrafi opóźnić start zaplanowanego zadania nawet o kilka godzin, więc nie
+          # sprawdzamy już faktycznej godziny uruchomienia (mogłaby leżeć poza każdym rozsądnym
+          # oknem). Zamiast tego sprawdzamy, KTÓRY wpis cron odpalił zadanie — GitHub podaje to
+          # niezależnie od opóźnienia — i odróżniamy tylko wersję letnią od zimowej.
+          OFFSET=$(TZ=Europe/Warsaw date +%z)
+          echo "Aktualna strefa czasowa Polski: $OFFSET"
+          RUN=false
+          if [ "$OFFSET" = "+0200" ]; then
+            case "$SCHEDULE" in
+              "7 5 * * *"|"37 14 * * *"|"37 17 * * *") RUN=true ;;
+            esac
+          else
+            case "$SCHEDULE" in
+              "7 6 * * *"|"37 15 * * *"|"37 18 * * *") RUN=true ;;
+            esac
+          fi
+          if [ "$RUN" = true ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
-            echo "To nie ta pora — pomijam synchronizację."
+            echo "To wpis dla innej pory roku (lato/zima) — pomijam, żeby nie zdublować synchronizacji."
           fi
 
   sync:
