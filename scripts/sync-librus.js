@@ -262,6 +262,48 @@ function parseTimetable(res, mondayISO) {
   return out;
 }
 
+// ---------- Pełna treść wiadomości (żeby czytać je w appce, bez przełączania do Librusa) ----------
+const MESSAGE_BODY_LIMIT = 20; // ile wiadomości max pobieramy w jednej synchronizacji (nieprzeczytane najpierw)
+const MESSAGE_BODY_CONCURRENCY = 3;
+
+// Pobiera pełną treść wybranych wiadomości (limit + kilka równolegle). Błąd pojedynczej
+// wiadomości nie przerywa reszty — po prostu nie będzie miała treści do podglądu w appce.
+async function fetchMessageBodies(client, wiadomosciZrodlo) {
+  const candidates = wiadomosciZrodlo
+    .filter((m) => Number.isFinite(m.id))
+    .sort((a, b) => Number(!!a.read) - Number(!!b.read)) // nieprzeczytane (read: false) najpierw
+    .slice(0, MESSAGE_BODY_LIMIT);
+
+  const out = [];
+  let i = 0;
+  let failed = 0;
+  const worker = async () => {
+    while (i < candidates.length) {
+      const m = candidates[i++];
+      try {
+        const full = await client.inbox.getMessage(6, m.id); // 6 = folder "Odebrane"
+        out.push({
+          id: m.id,
+          od: cleanText(m.user, 80),
+          temat: cleanText(m.title, 160),
+          data: cleanText(m.date, 30),
+          nieprzeczytana: !m.read,
+          tresc: cleanText(full?.content, 4000),
+          zalaczniki: asArray(full?.files)
+            .map((f) => cleanText(f?.name, 100))
+            .filter(Boolean),
+        });
+      } catch {
+        failed++;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: MESSAGE_BODY_CONCURRENCY }, worker));
+
+  if (failed) console.warn(`  ! nie udało się pobrać treści ${failed} wiadomości (temat/nadawca zostają widoczne, bez pełnego tekstu)`);
+  return out;
+}
+
 // ---------- Pełna lista ocen (bez Gemini) ----------
 function infoField(info, label) {
   const m = String(info ?? "").match(new RegExp(`${label}\\s*:\\s*([^\\n]*)`, "i"));
@@ -466,6 +508,33 @@ async function enrichBoxes(client, boxes) {
   return boxes;
 }
 
+// ---------- Frekwencja (bez Gemini) ----------
+// Biblioteka nie podaje nazwy przedmiotu przy pojedynczej nieobecności (tylko kod typu,
+// np. "n" - nieobecność, "u" - usprawiedliwiona, "s" - spóźnienie, "zw" - zwolniony;
+// dokładne kody zależą od szkoły), więc liczymy je zbiorczo po dniu i typie.
+function buildAbsenceSummary(grouped) {
+  const days = [];
+  const byType = {};
+  let total = 0;
+  for (const list of Object.values(grouped || {})) {
+    for (const entry of asArray(list)) {
+      const date = normalizeDay(entry?.date) ?? cleanText(entry?.date, 20);
+      if (!date) continue;
+      const counts = {};
+      for (const cell of asArray(entry?.table)) {
+        const type = cleanText(cell?.type, 10);
+        if (!type) continue;
+        counts[type] = (counts[type] || 0) + 1;
+        byType[type] = (byType[type] || 0) + 1;
+        total++;
+      }
+      if (Object.keys(counts).length) days.push({ date, counts });
+    }
+  }
+  days.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return { total, byType, days: days.slice(0, 60) };
+}
+
 // Zadania z modułu "Moje zadania". Zwraca [{ subject, title, teacher, type, from, to, status }].
 async function fetchHomework(client, today) {
   const subjects = asArray(await client.homework.listSubjects()).filter(Boolean);
@@ -524,7 +593,7 @@ async function fetchLibrusData(login, password, today, since, until) {
   const weekStarts = [mondayOf(todayISO), addDaysISO(mondayOf(todayISO), 7)];
   const apiState = {}; // wspólny stan pobierania planu z API (diagnostyka i słowniki)
 
-  const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml, timetableWeeks, homework, lucky, gradeBoxes] =
+  const [subjects, announcements, calendarThis, calendarNext, inbox, remarksHtml, timetableWeeks, homework, lucky, gradeBoxes, absenceGroups] =
     await Promise.all([
       safe("oceny", client.info.getGrades(), []),
       safe("ogłoszenia", client.inbox.listAnnouncements(), []),
@@ -559,6 +628,7 @@ async function fetchLibrusData(login, password, today, since, until) {
       safe("zadania domowe", fetchHomework(client, todayISO), []),
       safe("szczęśliwy numerek", client.info.getLuckyNumber(), null),
       safe("oceny (wszystkie pola)", fetchAllGradeBoxes(client).then((b) => enrichBoxes(client, b)), []),
+      safe("frekwencja", client.absence.getAbsences(), {}),
     ]);
 
   const calendarAll = [calendarThis, calendarNext]
@@ -598,10 +668,10 @@ async function fetchLibrusData(login, password, today, since, until) {
     .sort((a, b) => a.data.localeCompare(b.data))
     .slice(0, 120);
 
-  const wiadomosci = asArray(inbox)
+  const wiadomosciZrodlo = asArray(inbox)
     .filter((m) => !m.read || (normalizeDay(m.date) ?? "9999") >= since)
-    .slice(0, 30)
-    .map((m) => ({ od: m.user, temat: m.title, data: m.date, nieprzeczytana: !m.read }));
+    .slice(0, 30);
+  const wiadomosci = wiadomosciZrodlo.map((m) => ({ od: m.user, temat: m.title, data: m.date, nieprzeczytana: !m.read }));
 
   const ogloszenia = asArray(announcements)
     .filter((a) => (normalizeDay(a.date) ?? "9999") >= since)
@@ -615,6 +685,8 @@ async function fetchLibrusData(login, password, today, since, until) {
 
   const uwagiTekst = htmlToText(remarksHtml).slice(0, 12000);
 
+  const messageBodies = await fetchMessageBodies(client, wiadomosciZrodlo);
+
   const extra = {
     timetable: asArray(timetableWeeks)
       .flat()
@@ -622,7 +694,10 @@ async function fetchLibrusData(login, password, today, since, until) {
     homework: asArray(homework),
     luckyNumber: Number.isFinite(lucky) ? lucky : null,
     gradeList: buildGradeList(subjects, gradeBoxes),
+    messages: messageBodies,
+    absence: buildAbsenceSummary(absenceGroups),
   };
+  console.log(`  wiadomości: w skrzynce ${wiadomosciZrodlo.length}, pobrano pełną treść: ${messageBodies.length}`);
   // Diagnostyka bez nazw i treści: ile ocen znalazła biblioteka, ile wszystkie pola i jakie wartości nie są cyframi.
   const letters = {};
   for (const g of extra.gradeList) if (g.base == null) letters[g.value] = (letters[g.value] || 0) + 1;
@@ -652,7 +727,7 @@ async function syncChild(child) {
   const raw = await fetchLibrusData(login, password, today, since, until);
 
   console.log(
-    `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}`
+    `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"})`
   );
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
   const ai = await summarizeWithGemini(
