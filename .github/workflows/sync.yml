@@ -30,7 +30,14 @@ jobs:
         run: |
           HOUR=$(TZ=Europe/Warsaw date +%H)
           echo "Czas w Polsce: $(TZ=Europe/Warsaw date +%H:%M)"
-          if [ "$EVENT" = "workflow_dispatch" ] || [ "$HOUR" = "07" ] || [ "$HOUR" = "16" ] || [ "$HOUR" = "19" ]; then
+          # Okna godzinowe zamiast pojedynczych godzin — GitHub potrafi opóźnić zaplanowane
+          # zadanie o godzinę i więcej, zwłaszcza wcześnie rano; szersze okno nie gubi wtedy
+          # całego przebiegu. Każde okno i tak uruchamia się tylko raz, bo w danej godzinie
+          # trafia tylko jeden z dwóch wpisów cron (lato/zima).
+          if [ "$EVENT" = "workflow_dispatch" ] || \
+             [ "$HOUR" -ge 07 -a "$HOUR" -le 08 ] || \
+             [ "$HOUR" -ge 16 -a "$HOUR" -le 17 ] || \
+             [ "$HOUR" -ge 19 -a "$HOUR" -le 20 ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
