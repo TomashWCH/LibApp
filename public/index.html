@@ -293,6 +293,18 @@
   .counts { gap: 12px; flex-wrap: wrap; }
 
   .sa { display: inline-flex; align-items: center; justify-content: flex-end; gap: 4px; }
+  .spark-wrap { display: inline-flex; color: var(--muted); }
+  .spark-wrap.g5 { color: var(--ok); } .spark-wrap.g4 { color: var(--g4); } .spark-wrap.g3 { color: var(--warn); } .spark-wrap.g2 { color: var(--err); }
+  svg.spark { display: block; }
+  .msg-entry { border-top: 1px solid var(--line); padding: 2px 0; }
+  .msg-entry:first-of-type { border-top: 0; }
+  .msg-entry > summary { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; cursor: pointer; list-style: none; }
+  .msg-entry > summary::-webkit-details-marker { display: none; }
+  .msg-entry .chev { margin-left: auto; color: var(--muted); flex: none; }
+  .msg-entry .chev .ic { width: 18px; height: 18px; transition: transform 0.15s; }
+  .msg-entry[open] .chev .ic { transform: rotate(90deg); }
+  .msg-body { white-space: pre-line; font-size: 0.92rem; padding: 0 0 12px 18px; color: var(--ink); overflow-wrap: anywhere; }
+
   .ta { display: inline-block; width: 14px; text-align: center; }
   .od { color: var(--err); font-weight: 700; }
   ul.rows.newg .gc, .tg-row .gc { min-width: 40px; text-align: center; }
@@ -438,7 +450,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-22 · 11"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-22 · 12"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -745,6 +757,25 @@
   }
   const trendArrow = (delta) => (delta == null || Math.abs(delta) < 0.05 ? "" : delta > 0 ? `<span class="delta up" aria-label="rośnie">▲</span>` : `<span class="delta down" aria-label="spada">▼</span>`);
 
+  // Mały wykres trendu przy pojedynczym przedmiocie (bez osi, tylko kształt).
+  function subjectSparkline(list) {
+    const pts = list
+      .filter((g) => countable(g) && g.date)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)))
+      .map((g) => g.num);
+    if (pts.length < 2) return "";
+    const W = 64, H = 22, pad = 3;
+    const lo = Math.min(...pts), hi = Math.max(...pts);
+    const x = (i) => pad + (i / (pts.length - 1)) * (W - pad * 2);
+    const y = (v) => (hi === lo ? H / 2 : pad + ((hi - v) / (hi - lo)) * (H - pad * 2));
+    const line = pts.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const last = pts[pts.length - 1];
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">
+      <polyline points="${line}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+      <circle cx="${x(pts.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="2" fill="currentColor"/>
+    </svg>`;
+  }
+
   function gradeChart(series, label) {
     if (series.length === 0) return `<p class="empty">Brak ocen liczonych do średniej w tym okresie.</p>`;
     const W = 360, H = 150, L = 28, R = 14, T = 16, B = 24;
@@ -809,7 +840,7 @@
       const rows = list.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || ""))).map((g) => `<li>
         ${gradeChip(g)}<div class="main"><b>${esc(g.category || (g.final ? "Ocena końcowa" : "Ocena"))}${g.letter ? ` <span class="sub">(${esc(g.value)} = ${g.num})</span>` : ""}</b>
         <small>${fmtDate(g.date)}${g.weight ? ` · waga ${g.weight}` : ""}${g.inAvg === false ? " · nie liczy się do średniej" : ""}${g.teacher ? " · " + esc(g.teacher) : ""}${g.comment ? "<br>" + esc(g.comment) : ""}</small></div></li>`).join("");
-      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa"><span class="avgpill ${avgCls(avg)}">${avg == null ? plOcen(list.length) : fmtAvg(avg)}</span><span class="ta">${trendArrow(avg != null && before != null ? avg - before : null)}</span></span><span class="sg">${chips}</span></summary>${calcHtml}<ul class="rows">${rows}</ul></details>`;
+      return `<details class="subj"><summary><span class="sn">${esc(name)}</span><span class="sa"><span class="spark-wrap ${avgCls(avg)}">${subjectSparkline(list)}</span><span class="avgpill ${avgCls(avg)}">${avg == null ? plOcen(list.length) : fmtAvg(avg)}</span><span class="ta">${trendArrow(avg != null && before != null ? avg - before : null)}</span></span><span class="sg">${chips}</span></summary>${calcHtml}<ul class="rows">${rows}</ul></details>`;
     }).join("");
 
     const seg = [["1", "Semestr I"], ["2", "Semestr II"], ["all", "Cały rok"]]
@@ -982,8 +1013,17 @@
     const hwBody = hw.map((t) => todoRow(t, done.has(t.id), !done.has(t.id) && t.due && t.due < today)).join("");
     const days = arr(c.extra.timetable).filter((x) => x.date >= today).slice(0, 3);
     const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary class="cap1">${esc(longDate(x.date))} · ${x.lessons.length} lekcji</summary>${lessonsList(x.lessons)}</details>`).join("");
+    const abs = c.extra?.absence;
+    const absHtml = abs && abs.total > 0
+      ? `<div class="card"><div class="sect-title"><h3>${icon("calendar")} Frekwencja</h3><span class="badge">${abs.total}</span></div>
+          <div class="wk-chips">${Object.entries(abs.byType).map(([t, n]) => `<span class="chip">${esc(t)}: ${n}</span>`).join("")}</div>
+          <ul class="rows">${abs.days.slice(0, 10).map((d) => `<li><div class="main"><b>${fmtDate(d.date)}</b><small>${Object.entries(d.counts).map(([t, n]) => `${esc(t)}${n > 1 ? ` ×${n}` : ""}`).join(", ")}</small></div></li>`).join("")}</ul>
+          ${abs.days.length > 10 ? `<p class="empty">i ${abs.days.length - 10} więcej dni</p>` : ""}
+        </div>`
+      : "";
     return `${section("book", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.")}
-      <div class="card"><div class="sect-title"><h3>${icon("clock")} Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>`;
+      <div class="card"><div class="sect-title"><h3>${icon("clock")} Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>
+      ${absHtml}`;
   }
 
   const SHORT = { "matematyka": "Mat.", "język polski": "Polski", "język angielski": "Angielski", "język niemiecki": "Niemiecki", "przyroda": "Przyroda", "historia": "Historia", "wychowanie fizyczne": "WF", "edukacja informatyczna": "Inf.", "informatyka": "Inf.", "muzyka": "Muzyka", "plastyka": "Plastyka", "religia": "Religia", "biologia": "Biologia", "geografia": "Geografia", "fizyka": "Fizyka", "chemia": "Chemia", "technika": "Technika", "edukacja zdrowotna": "Zdrowie" };
@@ -1312,10 +1352,25 @@
       return `<li><div class="main"><b>${esc(r.text)}</b><small>${esc(r.teacher)}${r.teacher && r.date ? " · " : ""}${fmtDate(r.date)}</small></div>${r.type ? `<span class="chip ${cls}">${esc(r.type)}</span>` : ""}</li>`;
     }).join("");
 
-    const unread = s.messages.filter((m) => m.unread).length;
-    const messages = s.messages.map((m) => `<li><span class="${m.unread ? "unread" : "read"}" aria-label="${m.unread ? "nieprzeczytana" : "przeczytana"}"></span>
+    // Pełna treść wiadomości (jeśli synchronizacja ją już pobrała) — bez przełączania do Librusa.
+    const msgFull = Array.isArray(c.extra?.messages) ? c.extra.messages : null;
+    const unread = msgFull ? msgFull.filter((m) => m.nieprzeczytana).length : s.messages.filter((m) => m.unread).length;
+    const messages = msgFull
+      ? msgFull
+          .slice()
+          .sort((a, b) => Number(!!b.nieprzeczytana) - Number(!!a.nieprzeczytana) || String(b.data || "").localeCompare(String(a.data || "")))
+          .map((m) => `<details class="msg-entry"><summary><span class="${m.nieprzeczytana ? "unread" : "read"}" aria-label="${m.nieprzeczytana ? "nieprzeczytana" : "przeczytana"}"></span>
+            <div class="main"><b>${esc(m.temat || "(bez tematu)")}</b><small>${esc(m.od)}${m.od && m.data ? " · " : ""}${esc(m.data || "")}</small></div>
+            <span class="chev" aria-hidden="true">${icon("chevron")}</span></summary>
+            <div class="msg-body">${m.tresc ? esc(m.tresc).replace(/\n/g, "<br>") : `<span class="sub">Treść pobierze się przy najbliższej synchronizacji.</span>`}</div>
+            ${arr(m.zalaczniki).length ? `<p class="sub">Załączniki: ${arr(m.zalaczniki).map(esc).join(", ")} (otwórz w Librusie)</p>` : ""}</details>`)
+          .join("")
+      : s.messages
+          .map((m) => `<li><span class="${m.unread ? "unread" : "read"}" aria-label="${m.unread ? "nieprzeczytana" : "przeczytana"}"></span>
       <div class="main"><b>${esc(m.subject)}</b><small>${esc(m.from)}${m.from && m.date ? " · " : ""}${esc(m.date || "")}</small></div>
-      ${m.kind === "ogłoszenie" ? `<span class="chip">ogłoszenie</span>` : ""}</li>`).join("");
+      ${m.kind === "ogłoszenie" ? `<span class="chip">ogłoszenie</span>` : ""}</li>`)
+          .join("");
+    const messagesCount = msgFull ? msgFull.length : s.messages.length;
 
     const events = s.events.map((ev) => eventRow(ev, c, false)).join("");
 
@@ -1328,7 +1383,7 @@
         ${c.extra?.gradeList ? gradesSection(c) : section("star", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
         ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
         ${section("calendar", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
-        ${section("mail", "Wiadomości", s.messages.length, messages, "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${s.messages.length}`)}
+        ${section("mail", "Wiadomości", messagesCount, messages, msgFull ? "Brak wiadomości w skrzynce." : "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${messagesCount}`)}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
       ${extraSections(c, d)}
       ${whatsappSection(c, d)}
