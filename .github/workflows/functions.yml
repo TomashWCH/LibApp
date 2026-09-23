@@ -1,0 +1,52 @@
+name: Publikacja backendu LibApp (Gemini)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "functions/**"
+      - "firebase.json"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pobranie repozytorium
+        uses: actions/checkout@v4
+
+      - name: Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Instalacja zależności funkcji
+        working-directory: functions
+        run: npm install
+
+      - name: Przygotowanie poświadczeń Google
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/firebase-service-account.json"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$RUNNER_TEMP/firebase-service-account.json" >> "$GITHUB_ENV"
+
+      - name: Przygotowanie zmiennych środowiskowych funkcji
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LIBAPP_OWNER_UID: 0mlgSYJpp7fSoCdl4BmTSSZId9s2
+          GEMINI_MODEL: gemini-3.1-flash-lite
+          GEMINI_FALLBACK_MODEL: gemini-3.6-flash
+        run: |
+          {
+            printf "GEMINI_API_KEY=%s\n" "$GEMINI_API_KEY"
+            printf "LIBAPP_OWNER_UID=%s\n" "$LIBAPP_OWNER_UID"
+            printf "GEMINI_MODEL=%s\n" "$GEMINI_MODEL"
+            printf "GEMINI_FALLBACK_MODEL=%s\n" "$GEMINI_FALLBACK_MODEL"
+          } > functions/.env
+
+      - name: Publikacja funkcji
+        run: npx firebase-tools@latest deploy --only functions:askSchool --project libapp-31f52 --non-interactive
