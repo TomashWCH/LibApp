@@ -471,7 +471,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-22 · 15"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-23 · 16"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -1294,6 +1294,25 @@
     render();
   }
 
+  // Ile z zaplanowanych (nie ręcznych) synchronizacji GitHuba faktycznie się odpaliło
+  // w ostatnich dniach — do oceny, czy harmonogram GitHuba gubi terminy.
+  function syncHealthLine(d) {
+    const log = arr(d?.syncHealth).filter((e) => e.isScheduled);
+    if (!log.length) return `<p class="empty">Zbieramy dane — wróć za kilka dni.</p>`;
+    const now = Date.now();
+    const oldest = Math.min(...log.map((e) => e.atMs || now));
+    const daysTracked = Math.min(7, Math.max(1, Math.ceil((now - oldest) / (24 * 3600 * 1000))));
+    const since = now - daysTracked * 24 * 3600 * 1000;
+    const recent = log.filter((e) => (e.atMs || 0) >= since);
+    const expected = daysTracked * 3;
+    const missed = Math.max(0, expected - recent.length);
+    const failed = recent.filter((e) => e.status === "error").length;
+    const okText = missed === 0
+      ? `Wszystkie ${recent.length} z ${expected} zaplanowanych uruchomień w ostatnich ${daysTracked} dn. odpaliło się.`
+      : `${recent.length} z ${expected} zaplanowanych uruchomień w ostatnich ${daysTracked} dn. — ${missed} w ogóle się nie odpaliło (GitHub je pominął).`;
+    return `<p class="empty">${okText}${failed ? ` W tym ${failed} z błędem (nie kwestia harmonogramu, tylko np. Librusa czy Gemini).` : ""}</p>`;
+  }
+
   function settingsCard(d) {
     const kids = getChildren(d);
     const letters = detectedLetters(d);
@@ -1326,7 +1345,10 @@
       notif = `<p class="empty" style="margin:0 0 8px">Dostaniesz alert o nowej ocenie, uwadze, nowym sprawdzianie oraz poranne i wieczorne podsumowanie.</p>
         <button id="push-on" class="btn btn-small">${icon("bell")} Włącz powiadomienia</button>`;
     }
-    return `<h2 class="sec">${icon("sliders")} Ustawienia</h2><div class="card">${names}${scaleHtml}<div class="fld-h" ${names || scaleHtml ? 'style="margin-top:16px"' : ""}>${icon("bell")} Powiadomienia</div>${notif}</div>`;
+    return `<h2 class="sec">${icon("sliders")} Ustawienia</h2><div class="card">${names}${scaleHtml}
+      <div class="fld-h" ${names || scaleHtml ? 'style="margin-top:16px"' : ""}>${icon("clock")} Kondycja synchronizacji</div>
+      ${syncHealthLine(d)}
+      <div class="fld-h" style="margin-top:16px">${icon("bell")} Powiadomienia</div>${notif}</div>`;
   }
 
   // Średnia i ostatnie oceny na kaflu dziecka (pulpit).
