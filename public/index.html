@@ -193,6 +193,10 @@
   ul.lessons li { display: flex; align-items: center; gap: 10px; padding: 5px 0; font-size: 0.92rem; }
   ul.lessons .nr { width: 24px; height: 24px; border-radius: 50%; background: var(--line); color: var(--muted); font-size: 0.75rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; flex: none; }
   ul.lessons .flag { color: var(--warn); font-weight: 600; }
+  ul.lessons .nr.nr-extra { background: var(--ch-soft, var(--accent-soft)); color: var(--ch, var(--accent)); }
+  ul.lessons .nr.nr-extra .ic { width: 14px; height: 14px; }
+  ul.lessons .flag.flag-extra { color: var(--ch, var(--accent)); }
+
   .lucky { margin-top: 10px; font-size: 0.9rem; color: var(--muted); }
   .nb { position: absolute; top: 2px; left: calc(50% + 6px); background: var(--err); color: #fff; font-size: 0.65rem; font-weight: 700; border-radius: 999px; min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; }
   /* oceny */
@@ -467,7 +471,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-22 · 14"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-22 · 15"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -999,9 +1003,40 @@
     </li>`;
   }
 
+  // ---------- zajęcia pozalekcyjne (stałe w tygodniu, dopisane ręcznie — nie z Librusa) ----------
+  // Klucz to sekretSuffix dziecka (DZIECKO1/DZIECKO2 z users.config.json). Dzień tygodnia: 1=poniedziałek … 7=niedziela.
+  // Żeby zmienić lub dodać zajęcia, edytuj tę listę i wgraj nowy plik.
+  const EXTRA_ACTIVITIES = {
+    DZIECKO1: [ // Patryk
+      { day: 1, title: "Judo", time: "18:00-19:00" },
+      { day: 2, title: "Piłka", time: "16:00-17:00" },
+      { day: 2, title: "Python", time: "18:00-19:30" },
+      { day: 3, title: "Judo", time: "18:00-19:00" },
+      { day: 4, title: "Piłka", time: "16:00-17:00" },
+    ],
+    DZIECKO2: [ // Zuzia
+      { day: 2, title: "Tańce", time: "17:00-18:00" },
+      { day: 2, title: "Gimnastyka", time: "18:00-19:00" },
+      { day: 4, title: "Gimnastyka", time: "18:00-19:00" },
+    ],
+  };
+  function extrasForDate(childKey, iso) {
+    if (!isoDate.test(iso || "")) return [];
+    const [y, m, dd] = iso.split("-").map(Number);
+    const weekday = new Date(y, m - 1, dd).getDay() || 7; // niedziela (0) -> 7
+    return (EXTRA_ACTIVITIES[childKey] || [])
+      .filter((a) => a.day === weekday)
+      .map((a) => ({ nr: null, time: a.time, title: a.title, teacher: "", room: "", flag: "zajęcia dodatkowe" }));
+  }
+  // Lekcje szkolne (jeśli są) + zajęcia pozalekcyjne dla danego dnia, posortowane godzinowo.
+  function lessonsForDate(childKey, timetable, iso) {
+    const school = arr(timetable).find((x) => x.date === iso)?.lessons || [];
+    return [...school, ...extrasForDate(childKey, iso)].sort((a, b) => String(a.time || "").localeCompare(String(b.time || "")));
+  }
+
   function lessonsList(lessons) {
-    return `<ul class="lessons">${lessons.map((l) => `<li><span class="nr">${esc(l.nr)}</span>
-      <div class="main"><b>${esc(l.title)}</b><small>${esc(l.time)}${l.teacher ? `${l.time ? " · " : ""}${esc(l.teacher)}` : ""}${l.room ? ` · sala ${esc(l.room)}` : ""}${l.flag ? `${l.time || l.teacher ? " · " : ""}<span class="flag">${esc(l.flag)}</span>` : ""}</small></div></li>`).join("")}</ul>`;
+    return `<ul class="lessons">${lessons.map((l) => `<li><span class="nr${l.nr == null ? " nr-extra" : ""}">${l.nr == null ? icon("sparkle") : esc(l.nr)}</span>
+      <div class="main"><b>${esc(l.title)}</b><small>${esc(l.time)}${l.teacher ? `${l.time ? " · " : ""}${esc(l.teacher)}` : ""}${l.room ? ` · sala ${esc(l.room)}` : ""}${l.flag ? `${l.time || l.teacher ? " · " : ""}<span class="flag${l.nr == null ? " flag-extra" : ""}">${esc(l.flag)}</span>` : ""}</small></div></li>`).join("")}</ul>`;
   }
 
   function dayCard(d, iso, label) {
@@ -1015,7 +1050,7 @@
       .flatMap((k) => allEvents(k).filter((e) => e.date === iso).map((ev) => ({ ev, k })))
       .sort((a, b) => (a.ev.time || "").localeCompare(b.ev.time || ""));
     const plans = kids
-      .map((k) => ({ k, lessons: arr(k.extra?.timetable).find((x) => x.date === iso)?.lessons || [] }))
+      .map((k) => ({ k, lessons: lessonsForDate(k.key, k.extra?.timetable, iso) }))
       .filter((p) => p.lessons.length);
     const lucky = iso === today ? kids.filter((k) => k.extra?.luckyNumber != null) : [];
 
@@ -1071,8 +1106,12 @@
       .filter((t) => t.kind === "hw" && t.k.key === c.key)
       .sort((a, b) => (a.due || "9999").localeCompare(b.due || "9999"));
     const hwBody = hw.map((t) => todoRow(t, done.has(t.id), !done.has(t.id) && t.due && t.due < today)).join("");
-    const days = arr(c.extra.timetable).filter((x) => x.date >= today).slice(0, 3);
-    const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary class="cap1">${esc(longDate(x.date))} · ${x.lessons.length} lekcji</summary>${lessonsList(x.lessons)}</details>`).join("");
+    // 3 najbliższe dni ze szkołą i/lub zajęciami pozalekcyjnymi (nie tylko te, które ma Librus).
+    const days = Array.from({ length: 8 }, (_, n) => shiftISO(today, n))
+      .map((iso) => ({ date: iso, lessons: lessonsForDate(c.key, c.extra.timetable, iso) }))
+      .filter((x) => x.lessons.length)
+      .slice(0, 3);
+    const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary class="cap1">${esc(longDate(x.date))} · ${x.lessons.length}${x.lessons.length === 1 ? " zajęcie" : x.lessons.length >= 2 && x.lessons.length <= 4 ? " zajęcia" : " zajęć"}</summary>${lessonsList(x.lessons)}</details>`).join("");
     const abs = c.extra?.absence;
     const absHtml = abs && abs.total > 0
       ? `<div class="card"><div class="sect-title"><h3>${icon("calendar")} Frekwencja</h3><span class="badge">${abs.total}</span></div>
