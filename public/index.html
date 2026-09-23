@@ -34,6 +34,8 @@
     --hw: #2f8f5b; --hw-soft: #dff3e8;
     --msg: #6d4aad; --msg-soft: #ece3f7;
     --plan: #4a5fc1; --plan-soft: #e2e6fb;
+    --tomorrow: #a23e6f; --tomorrow-soft: #f6dde9;
+    --settings: #5b6b7a; --settings-soft: #e6eaec;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -57,6 +59,8 @@
       --hw: #6fd9a0; --hw-soft: #17372a;
       --msg: #c3a6ec; --msg-soft: #2c2140;
       --plan: #97a8f0; --plan-soft: #232a4a;
+      --tomorrow: #ec9ac0; --tomorrow-soft: #3a1f2c;
+      --settings: #a3b1bc; --settings-soft: #26303a;
     }
   }
   * { box-sizing: border-box; }
@@ -387,6 +391,12 @@
   .card.t-plan { background: var(--plan-soft); border-left-color: var(--plan); }
   .card.t-att { background: var(--c2-soft); border-left-color: var(--c2); }
   .card.t-wa { background: var(--ok-soft); border-left-color: var(--ok); }
+  .card.t-today { background: var(--accent-soft); border-left-color: var(--accent); }
+  .card.t-tomorrow { background: var(--tomorrow-soft); border-left-color: var(--tomorrow); }
+  .card.t-week { background: var(--plan-soft); border-left-color: var(--plan); }
+  .card.t-more { background: var(--c2-soft); border-left-color: var(--c2); }
+  .card.t-settings { background: var(--settings-soft); border-left-color: var(--settings); }
+
   .card.t-remark .sect-title h3 .ic { color: var(--warn); }
   .card.t-event .sect-title h3 .ic { color: var(--g4); }
   .card.t-msg .sect-title h3 .ic { color: var(--msg); }
@@ -394,6 +404,9 @@
   .card.t-plan .sect-title h3 .ic { color: var(--plan); }
   .card.t-att .sect-title h3 .ic { color: var(--c2); }
   .card.t-wa .sect-title h3 .ic { color: var(--ok); }
+  .card.t-week > summary > .ic { color: var(--plan); }
+  .card.t-wa > summary > .ic { color: var(--ok); }
+  .card.t-settings > summary > .ic { color: var(--settings); }
 
   .card { border-radius: 16px; }
   .tile { border-radius: 16px; border-left-color: var(--ch); }
@@ -415,14 +428,12 @@
   nav button[aria-current="page"] .ico.av { box-shadow: 0 0 0 2px var(--ch, var(--accent)); }
   .nb { top: 0; left: calc(50% + 8px); }
   .empty .ic, p.lucky .ic, small .ic { width: 1.05em; height: 1.05em; }
-  details.card.plan > summary, details.card.week > summary { display: flex; align-items: center; gap: 8px; }
-
-
-  /* przegląd tygodnia, ustawienia */
-  details.card.week > summary { cursor: pointer; font-weight: 700; padding: 2px 0; list-style: none; }
-  details.card.week > summary::-webkit-details-marker { display: none; }
-  details.card.week > summary::after { content: "›"; margin-left: auto; color: var(--muted); font-size: 1.4rem; transform: rotate(90deg); }
-  details.card.week[open] > summary::after { transform: rotate(-90deg); }
+  details.card.plan > summary { display: flex; align-items: center; gap: 8px; }
+  /* każda zwijana karta na Pulpicie (Przegląd tygodnia, WhatsApp, Ustawienia) — spójny styl */
+  details.card > summary { cursor: pointer; font-weight: 700; padding: 2px 0; list-style: none; display: flex; align-items: center; gap: 8px; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary::after { content: "›"; margin-left: auto; color: var(--muted); font-size: 1.4rem; transform: rotate(90deg); transition: transform 0.15s; }
+  details.card[open] > summary::after { transform: rotate(-90deg); }
   .wk-h { font-size: 0.78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin: 16px 0 6px; }
   .wk-kid { padding: 8px 0; border-top: 1px solid var(--line); }
   .wk-kid:first-of-type { border-top: 0; }
@@ -494,7 +505,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-23 · 17"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-23 · 18"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -651,7 +662,9 @@
     } else {
       body = `<div class="warnbox">Parowanie się nie udało: ${esc(String(w.error || "nieznany błąd").replace(/\.$/, ""))}. Uruchom Sparuj WhatsApp jeszcze raz.</div>`;
     }
-    return `<h2 class="sec">WhatsApp</h2><div class="card">${body}</div>`;
+    // Domyślnie zwinięte, gdy nic nie wymaga uwagi; rozwinięte, gdy czeka kod parowania albo jest błąd.
+    const openWa = !w || w.status === "pairing" || w.status === "error";
+    return `<details class="card t-wa"${openWa ? " open" : ""}><summary>${icon("chat")} WhatsApp${w?.status === "paired" ? ` <span class="sub">· połączono</span>` : ""}</summary>${body}</details>`;
   }
 
   // Rodzaj wpisu w kalendarzu -> ikona i kolor piktogramu (nie kolor dziecka — ten widać przy imieniu w liście dnia).
@@ -1091,7 +1104,8 @@
     const body = rows || planHtml || luckyHtml
       ? `${rows ? `<ul class="rows">${rows}</ul>` : `<p class="empty">Brak terminów i zadań.</p>`}${planHtml}${luckyHtml}`
       : `<p class="empty">Nic zaplanowanego.</p>`;
-    return `<h2 class="sec">${esc(label)} · ${esc(longDate(iso))}</h2><div class="card">${body}</div>`;
+    const tint = label === "Dziś" ? "t-today" : label === "Jutro" ? "t-tomorrow" : "";
+    return `<h2 class="sec">${esc(label)} · ${esc(longDate(iso))}</h2><div class="card ${tint}">${body}</div>`;
   }
 
   function viewTodo(d) {
@@ -1200,7 +1214,7 @@
     const narrative = d?.weeklyReview?.text && (Date.now() - (d.weeklyReview.atMs || 0) < 9 * 24 * 3600 * 1000)
       ? `<p class="sum" style="margin:0 0 12px">${esc(d.weeklyReview.text)}</p>`
       : "";
-    return `<details class="card week"${open ? " open" : ""}><summary>${icon("week")} Przegląd tygodnia <span class="sub">${sunday ? "· na nowy tydzień" : ""}</span></summary>
+    return `<details class="card week t-week"${open ? " open" : ""}><summary>${icon("week")} Przegląd tygodnia <span class="sub">${sunday ? "· na nowy tydzień" : ""}</span></summary>
       ${narrative}
       <div class="wk-h">Miniony tydzień</div>${past}
       <div class="wk-h">Przed nami · ${esc(rangeLabel)}</div>
@@ -1368,10 +1382,10 @@
       notif = `<p class="empty" style="margin:0 0 8px">Dostaniesz alert o nowej ocenie, uwadze, nowym sprawdzianie oraz poranne i wieczorne podsumowanie.</p>
         <button id="push-on" class="btn btn-small">${icon("bell")} Włącz powiadomienia</button>`;
     }
-    return `<h2 class="sec">${icon("sliders")} Ustawienia</h2><div class="card">${names}${scaleHtml}
+    return `<details class="card t-settings"><summary>${icon("sliders")} Ustawienia</summary>${names}${scaleHtml}
       <div class="fld-h" ${names || scaleHtml ? 'style="margin-top:16px"' : ""}>${icon("clock")} Kondycja synchronizacji</div>
       ${syncHealthLine(d)}
-      <div class="fld-h" style="margin-top:16px">${icon("bell")} Powiadomienia</div>${notif}</div>`;
+      <div class="fld-h" style="margin-top:16px">${icon("bell")} Powiadomienia</div>${notif}</details>`;
   }
 
   // Średnia i ostatnie oceny na kaflu dziecka (pulpit).
@@ -1414,7 +1428,7 @@
       </button>`).join("");
 
     const evCard = events.length
-      ? `<h2 class="sec">Dalsze terminy</h2><div class="card"><ul class="rows">${events.map(({ ev, k }) => eventRow(ev, k, true)).join("")}</ul></div>`
+      ? `<h2 class="sec">Dalsze terminy</h2><div class="card t-more"><ul class="rows">${events.map(({ ev, k }) => eventRow(ev, k, true)).join("")}</ul></div>`
       : "";
 
     const today = todayISO();
