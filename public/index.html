@@ -31,6 +31,9 @@
     --c1: #8a3a72; --c1-soft: #f2e0ec;
     --c2: #b26a00; --c2-soft: #f7e8cc;
     --g4: #2563b8; --g4-soft: #dbe8fb;
+    --hw: #2f8f5b; --hw-soft: #dff3e8;
+    --msg: #6d4aad; --msg-soft: #ece3f7;
+    --plan: #4a5fc1; --plan-soft: #e2e6fb;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -51,6 +54,9 @@
       --c1: #e08fc4; --c1-soft: #3a2133;
       --c2: #f0b04a; --c2-soft: #3a2c12;
       --g4: #7db2ff; --g4-soft: #1b2c47;
+      --hw: #6fd9a0; --hw-soft: #17372a;
+      --msg: #c3a6ec; --msg-soft: #2c2140;
+      --plan: #97a8f0; --plan-soft: #232a4a;
     }
   }
   * { box-sizing: border-box; }
@@ -372,6 +378,23 @@
   .hero .dot.pending { background: rgba(255, 255, 255, 0.7); }
   main { padding-top: 14px; }
   .card, .tile, .stat { box-shadow: var(--shadow); border-color: transparent; }
+  /* kolorowe odcienie kafli wg typu (Plan lekcji, Wiadomości, Zadania domowe, Wydarzenia...) */
+  .card[class*="t-"] { border-left: 4px solid transparent; }
+  .card.t-remark { background: var(--warn-soft); border-left-color: var(--warn); }
+  .card.t-event { background: var(--g4-soft); border-left-color: var(--g4); }
+  .card.t-msg { background: var(--msg-soft); border-left-color: var(--msg); }
+  .card.t-hw { background: var(--hw-soft); border-left-color: var(--hw); }
+  .card.t-plan { background: var(--plan-soft); border-left-color: var(--plan); }
+  .card.t-att { background: var(--c2-soft); border-left-color: var(--c2); }
+  .card.t-wa { background: var(--ok-soft); border-left-color: var(--ok); }
+  .card.t-remark .sect-title h3 .ic { color: var(--warn); }
+  .card.t-event .sect-title h3 .ic { color: var(--g4); }
+  .card.t-msg .sect-title h3 .ic { color: var(--msg); }
+  .card.t-hw .sect-title h3 .ic { color: var(--hw); }
+  .card.t-plan .sect-title h3 .ic { color: var(--plan); }
+  .card.t-att .sect-title h3 .ic { color: var(--c2); }
+  .card.t-wa .sect-title h3 .ic { color: var(--ok); }
+
   .card { border-radius: 16px; }
   .tile { border-radius: 16px; border-left-color: var(--ch); }
   h2.sec { display: flex; align-items: center; gap: 8px; }
@@ -471,7 +494,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-23 · 16"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-23 · 17"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -1114,14 +1137,14 @@
     const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary class="cap1">${esc(longDate(x.date))} · ${x.lessons.length}${x.lessons.length === 1 ? " zajęcie" : x.lessons.length >= 2 && x.lessons.length <= 4 ? " zajęcia" : " zajęć"}</summary>${lessonsList(x.lessons)}</details>`).join("");
     const abs = c.extra?.absence;
     const absHtml = abs && abs.total > 0
-      ? `<div class="card"><div class="sect-title"><h3>${icon("calendar")} Frekwencja</h3><span class="badge">${abs.total}</span></div>
+      ? `<div class="card t-att"><div class="sect-title"><h3>${icon("calendar")} Frekwencja</h3><span class="badge">${abs.total}</span></div>
           <div class="wk-chips">${Object.entries(abs.byType).map(([t, n]) => `<span class="chip">${esc(t)}: ${n}</span>`).join("")}</div>
           <ul class="rows">${abs.days.slice(0, 10).map((d) => `<li><div class="main"><b>${fmtDate(d.date)}</b><small>${Object.entries(d.counts).map(([t, n]) => `${esc(t)}${n > 1 ? ` ×${n}` : ""}`).join(", ")}</small></div></li>`).join("")}</ul>
           ${abs.days.length > 10 ? `<p class="empty">i ${abs.days.length - 10} więcej dni</p>` : ""}
         </div>`
       : "";
-    return `${section("book", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.")}
-      <div class="card"><div class="sect-title"><h3>${icon("clock")} Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>
+    return `${section("book", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.", null, "hw")}
+      <div class="card t-plan"><div class="sect-title"><h3>${icon("clock")} Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>
       ${absHtml}`;
   }
 
@@ -1404,8 +1427,8 @@
       <p class="empty" style="text-align:center;font-size:0.75rem">Wersja appki: ${BUILD}</p>`;
   }
 
-  function section(iconName, title, count, body, emptyText, badgeText) {
-    return `<div class="card">
+  function section(iconName, title, count, body, emptyText, badgeText, tint) {
+    return `<div class="card${tint ? ` t-${tint}` : ""}">
       <div class="sect-title"><h3>${icon(iconName)} ${title}</h3>${count > 0 ? `<span class="badge">${badgeText || count}</span>` : ""}</div>
       ${count > 0 ? `<ul class="rows">${body}</ul>` : `<p class="empty">${emptyText}</p>`}
     </div>`;
@@ -1440,7 +1463,7 @@
         : st === "not_found" ? "Nie znaleziono grupy o nazwie z sekretu WHATSAPP_GROUPS. Porównaj nazwę z listą grup na karcie WhatsApp na pulpicie."
         : st === "error" ? "Nie udało się streścić wiadomości z grupy. Spróbuję przy następnej synchronizacji."
         : "Grupa nie jest jeszcze podłączona albo czeka na pierwszą synchronizację.";
-      return `<div class="card"><div class="sect-title">${title}</div><p class="empty">${text}</p>${waStatLine(c, d)}</div>`;
+      return `<div class="card t-wa"><div class="sect-title">${title}</div><p class="empty">${text}</p>${waStatLine(c, d)}</div>`;
     }
     const entries = waRecent(c, 48).sort((a, b) => b.atMs - a.atMs);
     const dayName = (ms) => {
@@ -1458,7 +1481,7 @@
         ${todo.length ? `<div class="wa-h">Do zrobienia</div><ul class="wa-list todo">${todo.map((t) => `<li>${esc(t.text)}${t.due ? ` <span class="sub">(do ${fmtDate(t.due)})</span>` : ""}</li>`).join("")}</ul>` : ""}
       </div>`;
     }).join("");
-    return `<div class="card"><div class="sect-title">${title}${entries.length ? `<span class="badge">${entries.length}</span>` : ""}</div>
+    return `<div class="card t-wa"><div class="sect-title">${title}${entries.length ? `<span class="badge">${entries.length}</span>` : ""}</div>
       ${entries.length ? body : `<p class="empty">Brak nowych wiadomości w grupie z ostatnich 48 godzin.</p>`}${waStatLine(c, d)}</div>`;
   }
 
@@ -1517,9 +1540,9 @@
       </div>` : ""}
       ${hasSections ? `
         ${c.extra?.gradeList ? gradesSection(c) : section("star", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
-        ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.")}
-        ${section("calendar", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.")}
-        ${section("mail", "Wiadomości", messagesCount, messages, msgFull ? "Brak wiadomości w skrzynce." : "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${messagesCount}`)}
+        ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.", null, "remark")}
+        ${section("calendar", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.", null, "event")}
+        ${section("mail", "Wiadomości", messagesCount, messages, msgFull ? "Brak wiadomości w skrzynce." : "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${messagesCount}`, "msg")}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
       ${extraSections(c, d)}
       ${whatsappSection(c, d)}
