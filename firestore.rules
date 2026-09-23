@@ -2,16 +2,28 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Każdy zalogowany użytkownik może czytać/pisać WYŁĄCZNIE swój własny dokument.
-    // Zapis do Firestore z GitHub Actions omija te reguły (klucz konta serwisowego
-    // ma pełne uprawnienia administracyjne) — te reguły chronią appkę od strony klienta.
+    // Rodzina korzysta ze wspólnych danych zapisanych pod jednym kontem (Tomasz).
+    // Oboje rodzice mogą je czytać; ustawienia w podkolekcji "prefs" (imiona, odhaczone
+    // zadania, własne wpisy na liście, urządzenia z powiadomieniami) mogą też zapisywać —
+    // to appka, nie oni sami, decyduje co tam trafia. Zapis głównego dokumentu z GitHub
+    // Actions (klucz konta serwisowego) omija te reguły.
     match /users/{uid} {
-      allow read: if request.auth != null && request.auth.uid == uid;
-      allow write: if false; // appka nie zapisuje bezpośrednio, tylko czyta
+      function isOwnerOrSpouse() {
+        return request.auth != null &&
+          (request.auth.uid == uid ||
+           (uid == '0mlgSYJpp7fSoCdl4BmTSSZId9s2' && request.auth.uid == '8bFpQQsNTIbDSijLKZmrsqWZ9HE2'));
+      }
+
+      allow read: if isOwnerOrSpouse();
+      allow write: if false;
 
       match /syncHistory/{docId} {
-        allow read: if request.auth != null && request.auth.uid == uid;
+        allow read: if isOwnerOrSpouse();
         allow write: if false;
+      }
+
+      match /prefs/{docId} {
+        allow read, write: if isOwnerOrSpouse();
       }
     }
   }
