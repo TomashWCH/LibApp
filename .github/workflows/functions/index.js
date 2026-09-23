@@ -131,14 +131,49 @@ function searchIndex(index, args = {}) {
   const query = normalize(args.query);
   if (!query) return [];
 
-  const qTokens = [...new Set(query.split(/\s+/).filter((x) => x.length >= 2))];
+  const stop = new Set([
+    "na","na","jest","jestem","czy","co","jak","jaka","jaki","jakie","kiedy","gdzie","ktora","ktory","ktore",
+    "jest","są","sa","do","z","ze","w","we","o","u","i","a","czy","mi","mnie","mam","ma","będzie","bedzie",
+    "dla","ten","ta","to","te","tym","tej","tą","ta","moje","moj","moja","mojego","proszę","prosze"
+  ]);
+  const rawTokens = [...new Set(query.split(/\s+/).filter((x) => x.length >= 3 && !stop.has(x)))];
+  const aliases = new Map([
+    ["zbiorka", ["zbiorka","zbiork"]],
+    ["wycieczka", ["wycieczk"]],
+    ["wycieczki", ["wycieczk"]],
+    ["sprawdzian", ["sprawdzian","sprawdz"]],
+    ["kartkowka", ["kartkow"]],
+    ["angielski", ["angiel"]],
+    ["niemiecki", ["niemiec"]],
+    ["przyniesc", ["przynies","przynos"]],
+    ["przynies", ["przynies","przynos"]],
+    ["zapłata", ["zaplata","plat","oplat"]],
+    ["oplata", ["oplat","plat"]],
+    ["płatność", ["platnos","plat","oplat"]],
+    ["platnosc", ["platnos","plat","oplat"]],
+    ["zebranie", ["zebran","spotkan"]],
+    ["spotkanie", ["spotkan"]],
+    ["konkurs", ["konkurs"]],
+    ["lekcja", ["lekcj"]],
+    ["ocena", ["ocen"]],
+    ["uwaga", ["uwag"]],
+    ["zadanie", ["zadani"]],
+    ["zadan", ["zadani"]],
+  ]);
+
+  const stems = [];
+  for (const token of rawTokens) {
+    const expanded = aliases.get(token) || [token.length >= 6 ? token.slice(0, Math.max(4, token.length - 2)) : token];
+    stems.push(...expanded);
+  }
+  const uniqueStems = [...new Set(stems)];
+
   const source = str(args.source).toLowerCase();
   const child = normalize(args.child);
   const from = safeDate(args.date_from) || null;
   const to = safeDate(args.date_to) || null;
-  const terms = new Set(qTokens);
-
   const scored = [];
+
   for (const item of index) {
     if (source && source !== "all" && item.source.toLowerCase() !== source) continue;
     if (child && !normalize(item.child).includes(child)) continue;
@@ -148,38 +183,29 @@ function searchIndex(index, args = {}) {
     const hay = normalize([item.title, item.text, item.child, item.source].filter(Boolean).join(" "));
     const title = normalize(item.title);
     let score = 0;
-    for (const token of terms) {
-      if (title.includes(token)) score += 5;
-      else if (hay.includes(token)) score += 2;
+    let matched = 0;
+    for (const stem of uniqueStems) {
+      if (title.includes(stem)) { score += 7; matched++; }
+      else if (hay.includes(stem)) { score += 3; matched++; }
     }
-    if (!score) continue;
-    if (item.date && item.date >= todayISO()) score += 1;
+    if (!matched) continue;
+    // Prefer records that contain several meaningful words from the question.
+    score += Math.min(matched, 5) * 2;
+    if (item.date && item.date >= todayISO()) score += 2;
+    if (item.time) score += 1;
     scored.push({ score, item });
   }
 
   scored.sort((a, b) => b.score - a.score || String(a.item.date || "9999").localeCompare(String(b.item.date || "9999")));
-  const limit = Math.min(Math.max(Number(args.limit) || 8, 1), 12);
+  const limit = Math.min(Math.max(Number(args.limit) || 10, 1), 15);
   return scored.slice(0, limit).map(({ item }) => item);
 }
 
-const toolDeclaration = {
-  functionDeclarations: [{
-    name: "search_school_data",
-    description: "Przeszukuje zsynchronizowane dane szkolne rodzica z Librusa i WhatsAppa. Użyj tego narzędzia przed odpowiedzią na pytania o terminy, zbiórki, wycieczki, oceny, uwagi, wiadomości, zadania lub ustalenia rodziców.",
-    parameters: {
-      type: "OBJECT",
-      properties: {
-        query: { type: "STRING", description: "Najważniejsze słowa z pytania, np. 'zbiórka wycieczka' albo 'sprawdzian angielski'." },
-        child: { type: "STRING", description: "Imię dziecka, jeśli pytanie dotyczy konkretnego dziecka; inaczej pomiń." },
-        source: { type: "STRING", enum: ["all", "Librus", "WhatsApp"], description: "Źródło danych. Domyślnie all." },
-        date_from: { type: "STRING", description: "Opcjonalnie YYYY-MM-DD." },
-        date_to: { type: "STRING", description: "Opcjonalnie YYYY-MM-DD." },
-        limit: { type: "INTEGER", description: "1-12, zwykle 6-8." },
-      },
-      required: ["query"],
-    },
-  }],
-};
+function broadenSearchQuery(question) {
+  const stop = new Set(["na","jest","czy","co","jak","kiedy","gdzie","ktora","ktory","jaki","jakie","jest","sa","do","z","w","o","i","a","mi","mnie","mam","dla"]);
+  const tokens = normalize(question).split(/\s+/).filter(x => x.length >= 4 && !stop.has(x));
+  return [...new Set(tokens)].slice(0, 8).join(" " );
+}
 
 async function gemini(model, contents, tools = undefined) {
   if (!API_KEY) throw new Error("Brak GEMINI_API_KEY w konfiguracji funkcji.");
@@ -250,68 +276,62 @@ export const askSchool = onCall({
   if (request.auth.uid !== OWNER_UID) throw new HttpsError("permission-denied", "To konto nie ma dostępu do danych LibApp.");
 
   const question = str(request.data?.question).trim();
-  if (!question || question.length > 500) throw new HttpsError("invalid-argument", "Pytanie musi mieć od 1 do 500 znaków.");
+  if (!question || question.length > 500) {
+    throw new HttpsError("invalid-argument", "Pytanie musi mieć od 1 do 500 znaków.");
+  }
 
   const snap = await db.collection("users").doc(OWNER_UID).get();
   if (!snap.exists) throw new HttpsError("failed-precondition", "Brak zsynchronizowanych danych.");
   const data = snap.data() || {};
   const index = buildIndex(data);
 
-  const firstContents = [{ role: "user", parts: [{ text: `Pytanie rodzica: ${question}\n\nNajpierw zdecyduj, jakie dane szkolne trzeba znaleźć. Jeśli potrzebujesz danych z Librusa lub WhatsAppa, użyj narzędzia search_school_data. Nie odpowiadaj z wiedzy ogólnej.` }] }];
-  let first;
-  try {
-    first = await geminiWithFallback(firstContents, [toolDeclaration]);
-  } catch (err) {
-    console.error("askSchool Gemini planning error", err);
-    throw new HttpsError("unavailable", "Nie udało się skontaktować z asystentem. Spróbuj ponownie.");
-  }
-
-  const parts = first.candidates?.[0]?.content?.parts || [];
-  const calls = parts.filter((p) => p.functionCall).map((p) => p.functionCall);
-
-  // Awaryjnie: jeśli model nie wywołał narzędzia, wykonujemy szerokie wyszukiwanie
-  // po całym pytaniu zamiast pozwalać mu zgadywać.
-  const toolCalls = calls.length ? calls : [{ name: "search_school_data", args: { query: question, limit: 8 } }];
-  const toolResults = [];
-  for (const call of toolCalls.slice(0, 2)) {
-    if (call.name !== "search_school_data") continue;
-    const results = searchIndex(index, call.args || {});
-    toolResults.push({ name: call.name, args: call.args || {}, results });
-  }
-
-  const flattened = [];
-  const seen = new Set();
-  for (const tr of toolResults) {
-    for (const r of tr.results) {
-      const key = JSON.stringify([r.source, r.child, r.date, r.time, r.title, r.text]);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      flattened.push(r);
+  // 1. Szybkie, lokalne wyszukiwanie — bez Gemini i bez function calling.
+  let results = searchIndex(index, { query: question, limit: 12 });
+  if (results.length < 2) {
+    const terms = broadenSearchQuery(question);
+    if (terms) {
+      const extra = searchIndex(index, { query: terms, limit: 12 });
+      const seen = new Set(results.map(x => JSON.stringify(x)));
+      results = [...results, ...extra.filter(x => !seen.has(JSON.stringify(x)))].slice(0, 15);
     }
   }
 
-  const secondContents = [
-    ...firstContents,
-    { role: "model", parts: parts.length ? parts : [{ text: "Wyszukuję dane." }] },
-    ...toolResults.map((tr) => ({ role: "user", parts: [{ functionResponse: { name: tr.name, response: { results: tr.results } } }] })),
-    { role: "user", parts: [{ text: answerPrompt(question, data, flattened) }] },
-  ];
+  if (!results.length) {
+    return {
+      answer: "Nie znalazłem w zsynchronizowanych danych informacji pasujących do tego pytania. Spróbuj podać np. nazwę wycieczki, przedmiot, dziecko albo grupę.",
+      sources: [],
+      generatedAt: new Date().toISOString(),
+    };
+  }
 
+  // 2. Gemini dostaje tylko znalezione rekordy i układa odpowiedź.
+  const prompt = answerPrompt(question, data, results);
   let final;
   try {
-    final = await geminiWithFallback(secondContents);
+    final = await geminiWithFallback([{ role: "user", parts: [{ text: prompt }] }]);
   } catch (err) {
-    console.error("askSchool Gemini answer error", err);
-    throw new HttpsError("unavailable", "Nie udało się przygotować odpowiedzi. Spróbuj ponownie.");
+    console.error("askSchool Gemini answer error", { status: err.status, message: err.message });
+    if (err.status === 401 || err.status === 403) {
+      throw new HttpsError("failed-precondition", "Klucz Gemini w Firebase jest nieprawidłowy albo nie został skonfigurowany.");
+    }
+    if (err.status === 404) {
+      throw new HttpsError("failed-precondition", "Wybrany model Gemini nie jest dostępny dla tego klucza.");
+    }
+    throw new HttpsError("unavailable", `Gemini nie odpowiedział (${err.status || "błąd połączenia"}).`);
   }
 
   const answer = final.candidates?.[0]?.content?.parts?.map((p) => p.text || "").join("").trim();
-  if (!answer) throw new HttpsError("unavailable", "Asystent zwrócił pustą odpowiedź.");
+  if (!answer) throw new HttpsError("unavailable", "Gemini zwrócił pustą odpowiedź.");
 
   return {
     answer,
-    sources: flattened.slice(0, 8).map((r) => ({ source: r.source, child: r.child, date: r.date, time: r.time, title: r.title })),
+    sources: results.slice(0, 8).map((r) => ({
+      source: r.source,
+      child: r.child,
+      date: r.date,
+      time: r.time,
+      title: r.title,
+    })),
     generatedAt: new Date().toISOString(),
-    projectId: PROJECT_ID,
   };
 });
