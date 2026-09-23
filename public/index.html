@@ -380,6 +380,24 @@
   .hero .dot.ok { background: #7ef0b2; }
   .hero .dot.error { background: #ffb3b3; }
   .hero .dot.pending { background: rgba(255, 255, 255, 0.7); }
+  .ask-box { margin-top: 12px; }
+  .ask-input-wrap { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,0.98); color: var(--ink); border-radius: 14px; padding: 5px 6px 5px 11px; box-shadow: 0 5px 18px rgba(0,0,0,0.12); }
+  .ask-ico { display: inline-flex; color: var(--accent); flex: none; }
+  .ask-ico .ic { width: 19px; height: 19px; }
+  #ask-input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; padding: 8px 2px; }
+  #ask-input::placeholder { color: var(--muted); opacity: 0.9; }
+  #ask-submit { border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 700; padding: 9px 12px; cursor: pointer; white-space: nowrap; }
+  #ask-submit:disabled { opacity: 0.65; cursor: default; }
+  .ask-result { margin-top: 8px; background: rgba(255,255,255,0.98); color: var(--ink); border-radius: 14px; padding: 12px 14px; box-shadow: 0 5px 18px rgba(0,0,0,0.10); }
+  .ask-answer { white-space: pre-line; font-size: 0.92rem; line-height: 1.45; }
+  .ask-sources { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .ask-source { font-size: 0.72rem; padding: 3px 8px; border-radius: 999px; background: var(--bg); color: var(--muted); }
+  .ask-loading { color: var(--muted); font-size: 0.86rem; }
+  .ask-error { color: var(--err); font-size: 0.86rem; }
+  @media (max-width: 430px) {
+    .ask-input-wrap { padding-left: 9px; }
+    #ask-submit { padding: 9px 10px; }
+  }
   main { padding-top: 14px; }
   .card, .tile, .stat { box-shadow: var(--shadow); border-color: transparent; }
   /* kolorowe odcienie kafli wg typu (Plan lekcji, Wiadomości, Zadania domowe, Wydarzenia...) */
@@ -475,6 +493,14 @@
         <span class="dot pending" id="sync-dot"></span>
         <span id="sync-text">Wczytywanie…</span>
       </div>
+      <form id="ask-form" class="ask-box" autocomplete="off">
+        <div class="ask-input-wrap">
+          <span class="ask-ico" aria-hidden="true">✦</span>
+          <input id="ask-input" type="text" maxlength="500" placeholder="Zapytaj np. „Na którą jest zbiórka na wycieczkę?”" aria-label="Zapytaj o szkołę" />
+          <button id="ask-submit" type="submit">Zapytaj</button>
+        </div>
+        <div id="ask-result" class="ask-result" hidden></div>
+      </form>
     </div>
   </header>
   <main id="content"></main>
@@ -484,6 +510,7 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-functions.js";
   import {
     getAuth, GoogleAuthProvider, signInWithPopup, reauthenticateWithPopup, signOut, onAuthStateChanged
   } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
@@ -503,6 +530,8 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
+  const functions = getFunctions(app, "europe-central2");
+  const askSchool = httpsCallable(functions, "askSchool");
   const provider = new GoogleAuthProvider();
 
   const BUILD = "2026-09-23 · 18"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
@@ -1671,7 +1700,52 @@
     }
   }
 
+  // ---------- Zapytaj LibApp ----------
+  function renderAskSources(sources) {
+    const unique = [];
+    const seen = new Set();
+    for (const s of arr(sources)) {
+      const label = [s.source, s.child, s.date && fmtDate(s.date), s.time].filter(Boolean).join(" · ");
+      if (!label || seen.has(label)) continue;
+      seen.add(label);
+      unique.push(`<span class="ask-source">${esc(label)}</span>`);
+      if (unique.length >= 6) break;
+    }
+    return unique.join("");
+  }
+
+  async function submitAsk() {
+    const input = $("#ask-input"), button = $("#ask-submit"), result = $("#ask-result");
+    const question = input.value.trim();
+    if (!question) { input.focus(); return; }
+    button.disabled = true;
+    button.textContent = "Szukam…";
+    result.hidden = false;
+    result.innerHTML = `<div class="ask-loading">Przeszukuję Librusa i WhatsAppa…</div>`;
+    try {
+      const response = await askSchool({ question });
+      const data = response.data || {};
+      result.innerHTML = `<div class="ask-answer">${esc(data.answer || "Brak odpowiedzi.")}</div>${data.sources?.length ? `<div class="ask-sources">${renderAskSources(data.sources)}</div>` : ""}`;
+    } catch (err) {
+      const code = err?.code || "";
+      const msg = code === "functions/unauthenticated" ? "Zaloguj się ponownie."
+        : code === "functions/permission-denied" ? "To konto nie ma dostępu do danych LibApp."
+        : code === "functions/not-found" ? "Backend Zapytaj LibApp nie jest jeszcze opublikowany."
+        : "Nie udało się znaleźć odpowiedzi. Spróbuj sformułować pytanie inaczej.";
+      result.innerHTML = `<div class="ask-error">${esc(msg)}</div>`;
+      console.error("askSchool", err);
+    } finally {
+      button.disabled = false;
+      button.textContent = "Zapytaj";
+    }
+  }
+
   // ---------- zdarzenia ----------
+  $("#ask-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    submitAsk();
+  });
+
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
