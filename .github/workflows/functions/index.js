@@ -211,7 +211,6 @@ async function gemini(model, contents, tools = undefined) {
   if (!API_KEY) throw new Error("Brak GEMINI_API_KEY w konfiguracji funkcji.");
   const body = {
     contents,
-    generationConfig: { temperature: 0.15 },
     ...(tools ? { tools } : {}),
   };
   for (let attempt = 0; ; attempt++) {
@@ -280,10 +279,24 @@ export const askSchool = onCall({
     throw new HttpsError("invalid-argument", "Pytanie musi mieć od 1 do 500 znaków.");
   }
 
-  const snap = await db.collection("users").doc(OWNER_UID).get();
-  if (!snap.exists) throw new HttpsError("failed-precondition", "Brak zsynchronizowanych danych.");
-  const data = snap.data() || {};
-  const index = buildIndex(data);
+  let data;
+  try {
+    const snap = await db.collection("users").doc(OWNER_UID).get();
+    if (!snap.exists) throw new HttpsError("failed-precondition", "Brak zsynchronizowanych danych.");
+    data = snap.data() || {};
+  } catch (err) {
+    console.error("askSchool Firestore error", err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError("failed-precondition", `Nie udało się odczytać danych LibApp: ${err?.message || "błąd Firestore"}`);
+  }
+
+  let index;
+  try {
+    index = buildIndex(data);
+  } catch (err) {
+    console.error("askSchool index error", err);
+    throw new HttpsError("failed-precondition", `Nie udało się przygotować danych do wyszukiwania: ${err?.message || "błąd danych"}`);
+  }
 
   // 1. Szybkie, lokalne wyszukiwanie — bez Gemini i bez function calling.
   let results = searchIndex(index, { query: question, limit: 12 });
