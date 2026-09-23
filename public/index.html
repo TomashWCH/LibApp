@@ -508,7 +508,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-23 · 19"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-23 · 20"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -1120,10 +1120,11 @@
   }
 
   function addTodoForm() {
-    return `<div class="card"><div class="fld"><span>${icon("check")}</span><input id="new-todo-text" placeholder="Nowe zadanie, np. Kupić plastelinę" maxlength="200" autocomplete="off" /></div>
+    return `<details class="card t-hw"><summary>${icon("check")} Dodaj zadanie</summary>
+      <div class="fld"><span>${icon("check")}</span><input id="new-todo-text" placeholder="Nowe zadanie, np. Kupić plastelinę" maxlength="200" autocomplete="off" /></div>
       <div class="fld"><span>${icon("calendar")}</span><input id="new-todo-due" type="date" /></div>
       <button id="add-todo-btn" class="btn btn-small">${icon("check")} Dodaj do listy</button>
-      <p class="empty" style="margin:8px 0 0">Widoczne dla Was obojga.</p></div>`;
+      <p class="empty" style="margin:8px 0 0">Widoczne dla Was obojga.</p></details>`;
   }
 
   function viewTodo(d) {
