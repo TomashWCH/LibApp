@@ -81,6 +81,7 @@ jobs:
           LIBRUS_PASSWORD_DZIECKO1: ${{ secrets.LIBRUS_PASSWORD_DZIECKO1 }}
           LIBRUS_LOGIN_DZIECKO2: ${{ secrets.LIBRUS_LOGIN_DZIECKO2 }}
           LIBRUS_PASSWORD_DZIECKO2: ${{ secrets.LIBRUS_PASSWORD_DZIECKO2 }}
+          GH_EVENT_NAME: ${{ github.event_name }} # do licznika "zgubionych" synchronizacji w appce
         run: npm run sync
 
       # --- Moduł WhatsApp: podsumowanie wybranych grup ---
