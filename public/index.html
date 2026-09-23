@@ -508,7 +508,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-23 · 20"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-23 · 21"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -572,7 +572,7 @@
 
   // ---------- stan ----------
   const now0 = new Date();
-  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
+  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -642,6 +642,85 @@
     return sy.status === "ok"
       ? `<p style="color:var(--muted);font-size:0.85rem;margin-top:8px">Ostatnie odświeżenie: ${esc(when)} · śledzone grupy: ${tracked}${recv}</p>`
       : `<div class="warnbox" style="margin-top:8px">Ostatnie odświeżenie grup (${esc(when)}) nie w pełni się udało: ${esc(sy.error || "nieznany błąd")}.${esc(recv)}</div>`;
+  }
+
+  // ---------- Szukaj (bez Gemini — dopasowanie słów kluczowych w już zsynchronizowanych danych) ----------
+  const SEARCH_STOP = new Set([
+    "na","jest","jestem","czy","co","jak","jaka","jaki","jakie","kiedy","gdzie","ktora","ktory","ktore",
+    "sa","do","ze","we","o","u","i","a","mi","mnie","mam","ma","bedzie","dla","ten","ta","to","te","tym",
+    "tej","moje","moj","moja","mojego","prosze","się","sie","po","za","tam","tez","też","jego","jej",
+  ]);
+  const normSearch = (s) =>
+    String(s ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+  // Zbiera przeszukiwalne wpisy z tego, co appka już ma zsynchronizowane (bez nowych zapytań do Librusa/WhatsAppa).
+  function buildSearchIndex(d) {
+    const out = [];
+    const add = (source, child, date, time, title, text) => {
+      const clean = String(text ?? "").replace(/\s+/g, " ").trim();
+      if (!clean) return;
+      out.push({ source, child, date: isoDate.test(date || "") ? date : null, time: time || null, title: title || null, text: clean.slice(0, 500) });
+    };
+    for (const k of getChildren(d)) {
+      for (const g of gradesOf(k)) add("Oceny", k.name, g.date, null, g.subject, `${g.subject}: ${g.value}${g.category ? ` (${g.category})` : ""}${g.teacher ? ` — ${g.teacher}` : ""}`);
+      for (const r of arr(k.sections?.remarks)) add("Uwagi", k.name, r.date, null, "Uwaga", `${r.text || ""}${r.teacher ? ` — ${r.teacher}` : ""}`);
+      for (const e of allEvents(k)) add("Wydarzenia", k.name, e.date, e.time, e.title, `${e.title}${e.sourceNote ? ` — ${e.sourceNote}` : ""}`);
+      for (const h of arr(k.extra?.homework)) add("Zadania domowe", k.name, h.to || h.date, null, h.subject, `${h.subject ? h.subject + ": " : ""}${h.title || ""}`);
+      const msgs = Array.isArray(k.extra?.messages) ? k.extra.messages : arr(k.sections?.messages);
+      for (const m of msgs) add("Wiadomości", k.name, m.data || m.date, null, m.temat || m.subject, `${m.temat || m.subject || ""}${m.tresc ? ` — ${m.tresc}` : ""}${m.od || m.from ? ` (${m.od || m.from})` : ""}`);
+      const wa = d?.whatsapp?.summaries?.[k.key];
+      if (wa) {
+        for (const en of arr(wa.entries)) {
+          const date = en.atMs ? new Date(en.atMs).toISOString().slice(0, 10) : null;
+          add("WhatsApp", k.name, date, null, wa.groupName, [en.summary, ...arr(en.highlights)].filter(Boolean).join(". "));
+          for (const t of arr(en.todo)) add("WhatsApp", k.name, t.due, null, "Do zrobienia", t.text);
+        }
+      }
+    }
+    return out;
+  }
+
+  function searchIndex(index, query) {
+    const tokens = [...new Set(normSearch(query).split(/\s+/).filter((x) => x.length >= 3 && !SEARCH_STOP.has(x)))];
+    if (!tokens.length) return [];
+    const scored = [];
+    for (const item of index) {
+      const title = normSearch(item.title);
+      const hay = normSearch([item.title, item.text, item.child, item.source].filter(Boolean).join(" "));
+      let score = 0, matched = 0;
+      for (const t of tokens) {
+        if (title.includes(t)) { score += 7; matched++; }
+        else if (hay.includes(t)) { score += 3; matched++; }
+      }
+      if (!matched) continue;
+      score += Math.min(matched, 5) * 2;
+      if (item.date) score += item.date >= todayISO() ? 2 : 0;
+      scored.push({ score, item });
+    }
+    scored.sort((a, b) => b.score - a.score || String(b.item.date || "0").localeCompare(String(a.item.date || "0")));
+    return scored.slice(0, 12).map((x) => x.item);
+  }
+
+  function renderSearchResults(results, query) {
+    if (!query.trim()) return "";
+    if (!results.length) {
+      return `<p class="empty" style="margin-top:10px">Nic nie znaleziono dla „${esc(query)}". Spróbuj innego słowa — np. nazwy przedmiotu, wydarzenia albo dziecka.</p>`;
+    }
+    const rows = results.map((r) => `<li><div class="main"><b>${esc(r.title || r.source)}</b>
+      <small><span class="chip">${esc(r.source)}</span>${r.child ? ` ${esc(r.child)}` : ""}${r.date ? " · " + fmtDate(r.date) : ""}${r.time ? " " + esc(r.time) : ""}</small>
+      <p class="sum" style="margin:4px 0 0;font-size:0.88rem">${esc(r.text)}</p></div></li>`).join("");
+    return `<ul class="rows" style="margin-top:6px">${rows}</ul>`;
+  }
+
+  function searchCard(d) {
+    const q = state.searchQuery || "";
+    const results = q.trim() ? searchIndex(buildSearchIndex(d), q) : [];
+    return `<details class="card t-msg"${q.trim() ? " open" : ""}><summary>${icon("search")} Szukaj</summary>
+      <div class="fld"><span>${icon("search")}</span><input id="search-input" value="${esc(q)}" placeholder="np. zbiórka, biologia, wycieczka" maxlength="60" autocomplete="off" /></div>
+      <button id="search-btn" class="btn btn-small">${icon("search")} Szukaj</button>
+      <p class="empty" style="margin:8px 0 0">Przeszukuje już zsynchronizowane dane: oceny, uwagi, wydarzenia, wiadomości i podsumowania WhatsAppa. Nie rozumie pytań, tylko dopasowuje słowa.</p>
+      ${renderSearchResults(results, q)}
+    </details>`;
   }
 
   function whatsappCard(d) {
@@ -793,6 +872,7 @@
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.2-4 4.2-6 8-6s6.8 2 8 6"/>',
     pencil: '<path d="M4 20l1-4L15.5 5.5a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8.5 19 4 20z"/><path d="M14 7l3 3"/>',
     suitcase: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/>',
+    search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
   };
   const icon = (name, cls = "") =>
     `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SVG[name] || ""}</svg>`;
@@ -1315,6 +1395,12 @@
       toast("Nie udało się pokazać powiadomienia: " + (e?.message || e), true);
     }
   }
+  function runSearch() {
+    const el = $("#search-input");
+    state.searchQuery = (el?.value || "").trim();
+    render();
+  }
+
   async function addManualTodo() {
     const textEl = $("#new-todo-text"), dueEl = $("#new-todo-due");
     const text = (textEl?.value || "").trim().slice(0, 200);
@@ -1484,7 +1570,7 @@
     const today = todayISO();
     const sunday = new Date().getDay() === 0;
     const week = weekCard(d, sunday);
-    return `${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    return `${searchCard(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
       ${settingsCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
@@ -1724,11 +1810,13 @@
   // ---------- zdarzenia ----------
   document.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.id === "new-todo-text") { e.preventDefault(); addManualTodo(); }
+    if (e.key === "Enter" && e.target.id === "search-input") { e.preventDefault(); runSearch(); }
   });
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
     if (e.target.closest("#add-todo-btn")) { addManualTodo(); return; }
+    if (e.target.closest("#search-btn")) { runSearch(); return; }
     const delTodo = e.target.closest("[data-del-todo]");
     if (delTodo) { deleteManualTodo(delTodo.dataset.delTodo); return; }
     if (e.target.closest("#save-names")) { saveNames(); return; }
