@@ -157,6 +157,20 @@
   .cal-day .dots { position: absolute; left: 0; right: 0; bottom: 5px; display: flex; justify-content: center; gap: 3px; }
   .dot-c { width: 6px; height: 6px; border-radius: 50%; background: var(--ch); }
   .cal-day.sel .dot-c { background: var(--on-accent); }
+  /* piktogramy dnia w kalendarzu — kolor oznacza rodzaj wpisu, nie dziecko */
+  .cal-day .dots { gap: 2px; }
+  .cal-day .dots i { display: inline-flex; width: 11px; height: 11px; }
+  .cal-day .dots i .ic { width: 11px; height: 11px; }
+  .b-exam { color: var(--err); }
+  .b-g5 { color: var(--ok); } .b-g4 { color: var(--g4); } .b-g3 { color: var(--warn); } .b-g2 { color: var(--err); } .b-g0 { color: var(--muted); }
+  .b-remark { color: var(--warn); } .b-remark-neg { color: var(--err); }
+  .b-trip { color: var(--accent); }
+  .b-event { color: var(--muted); }
+  .b-todo { color: var(--muted); }
+  .cal-day.sel i[class^="b-"], .cal-day.sel i[class*=" b-"] { color: var(--on-accent); }
+  .legend i { display: inline-flex; width: 15px; height: 15px; margin-right: 4px; vertical-align: -3px; }
+  .legend i .ic { width: 15px; height: 15px; }
+
   .legend { display: flex; gap: 16px; font-size: 0.82rem; color: var(--muted); margin: 12px 2px; flex-wrap: wrap; }
   .legend span { display: inline-flex; align-items: center; gap: 6px; }
   .wa-entry { padding: 10px 0; border-top: 1px solid var(--line); }
@@ -453,7 +467,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-22 · 13"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-22 · 14"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -613,26 +627,49 @@
     return `<h2 class="sec">WhatsApp</h2><div class="card">${body}</div>`;
   }
 
+  // Rodzaj wpisu w kalendarzu -> ikona i kolor piktogramu (nie kolor dziecka — ten widać przy imieniu w liście dnia).
+  const TRIP_RE = /wycieczk|wyjazd|zielona szko/i;
+  function catOf(ev) {
+    if (examLabel(ev.title)) return "exam";
+    if (TRIP_RE.test(ev.title || "")) return "trip";
+    return "event";
+  }
+  function badgeFor(cat, extra) {
+    if (cat === "exam") return { icon: "pencil", cls: "b-exam" };
+    if (cat === "trip") return { icon: "suitcase", cls: "b-trip" };
+    if (cat === "event") return { icon: "calendar", cls: "b-event" };
+    if (cat === "grade") return { icon: "star", cls: `b-${gcls(extra)}` };
+    if (cat === "remark") return { icon: "alert", cls: (extra?.type || "").toLowerCase().startsWith("neg") ? "b-remark-neg" : "b-remark" };
+    return { icon: "check", cls: "b-todo" };
+  }
+  const CAT_PRIORITY = ["exam", "grade", "remark", "trip", "event", "todo"];
+
   function viewKalendarz(d) {
     const kids = getChildren(d);
     if (kids.length === 0) return `<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>`;
 
-    // terminy wszystkich dzieci pogrupowane po dniu (bez odfiltrowywania przeszłości)
+    // wszystko, co ma datę, pogrupowane po dniu (bez odfiltrowywania przeszłości): terminy,
+    // oceny i uwagi — każde z rozpoznanym rodzajem (do piktogramu) i kolorem dziecka (do listy).
     const byDay = new Map();
+    const push = (date, entry) => {
+      if (!isoDate.test(date || "")) return;
+      if (!byDay.has(date)) byDay.set(date, []);
+      byDay.get(date).push(entry);
+    };
     for (const k of kids) {
-      for (const ev of allEvents(k)) {
-        if (!isoDate.test(ev.date || "")) continue;
-        if (!byDay.has(ev.date)) byDay.set(ev.date, []);
-        byDay.get(ev.date).push({ ev, k });
+      for (const ev of allEvents(k)) push(ev.date, { ev, k, cat: catOf(ev) });
+      for (const g of gradesOf(k)) {
+        if (g.final || g.date == null) continue;
+        push(g.date, { grade: g, k, cat: "grade" });
       }
+      for (const r of arr(k.sections?.remarks)) push(r.date, { remark: r, k, cat: "remark" });
     }
 
     // zadania (WhatsApp i zadania domowe) z terminem też trafiają do kalendarza
     const doneSet = loadDone();
     for (const t of todoItems(d)) {
       if (!t.due || doneSet.has(t.id)) continue;
-      if (!byDay.has(t.due)) byDay.set(t.due, []);
-      byDay.get(t.due).push({ todo: t, k: t.k });
+      push(t.due, { todo: t, k: t.k, cat: "todo" });
     }
 
     const { y, m } = state.cal;
@@ -648,14 +685,23 @@
       const dt = new Date(y, m, 1 - offset + i);
       const iso = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
       const items = byDay.get(iso) || [];
-      const idxs = [...new Set(items.map((x) => x.k.idx))].slice(0, 3);
+      const present = CAT_PRIORITY.filter((c) => items.some((x) => x.cat === c)).slice(0, 3);
+      const badges = present
+        .map((cat) => {
+          const worst = cat === "grade" ? items.filter((x) => x.cat === "grade").map((x) => x.grade).sort((a, b) => (a.num ?? 9) - (b.num ?? 9))[0] : null;
+          const worstNeg = cat === "remark" ? items.find((x) => x.cat === "remark" && (x.remark.type || "").toLowerCase().startsWith("neg"))?.remark : null;
+          const b = badgeFor(cat, worst || worstNeg || items.find((x) => x.cat === cat)?.remark);
+          return `<i class="${b.cls}">${icon(b.icon)}</i>`;
+        })
+        .join("");
       const cls = ["cal-day", dt.getMonth() !== m ? "off" : "", iso === today ? "today" : "", iso === state.calDay ? "sel" : ""].filter(Boolean).join(" ");
-      const label = `${dt.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" })}${items.length ? ", terminów: " + items.length : ""}`;
-      cells += `<button class="${cls}" data-day="${iso}" aria-label="${esc(label)}">${dt.getDate()}<span class="dots">${idxs.map((ix) => `<i class="dot-c c${ix}"></i>`).join("")}</span></button>`;
+      const label = `${dt.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" })}${items.length ? ", wpisów: " + items.length : ""}`;
+      cells += `<button class="${cls}" data-day="${iso}" aria-label="${esc(label)}">${dt.getDate()}<span class="dots">${badges}</span></button>`;
     }
 
-    const timeOf = (x) => (x.ev ? x.ev.time || "" : "99:99");
-    const list = (byDay.get(state.calDay) || []).slice().sort((a, b) => timeOf(a).localeCompare(timeOf(b)));
+    const timeOf = (x) => (x.ev ? x.ev.time || "" : x.cat === "grade" || x.cat === "remark" ? "00:00" : "99:99");
+    const catOrder = (c) => CAT_PRIORITY.indexOf(c);
+    const list = (byDay.get(state.calDay) || []).slice().sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || timeOf(a).localeCompare(timeOf(b)));
     const [sy, sm, sd] = state.calDay.split("-").map(Number);
     const dayTitle = new Date(sy, sm - 1, sd).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 
@@ -668,9 +714,18 @@
         </div>
       </div>
       <div class="cal-grid">${cells}</div>
-      <div class="legend">${kids.map((k) => `<span class="c${k.idx}"><i class="dot-c"></i>${esc(k.name)}</span>`).join("")}</div>
+      <div class="legend"><span><i class="b-exam">${icon("pencil")}</i>sprawdzian/kartkówka</span><span><i class="b-grade4">${icon("star")}</i>ocena</span><span><i class="b-remark-neg">${icon("alert")}</i>uwaga</span><span><i class="b-trip">${icon("suitcase")}</i>wycieczka</span><span><i class="b-event">${icon("calendar")}</i>inny termin</span></div>
       <h2 class="sec cap1">${esc(dayTitle)}</h2>
-      <div class="card">${list.length ? `<ul class="rows">${list.map((x) => (x.todo ? todoRow(x.todo, false, false) : eventRow(x.ev, x.k, true))).join("")}</ul>` : `<p class="empty">Brak terminów tego dnia.</p>`}</div>`;
+      <div class="card">${list.length ? `<ul class="rows">${list.map((x) => {
+        if (x.todo) return todoRow(x.todo, false, false);
+        if (x.grade) return `<li>${gradeChip(x.grade)}<div class="main"><b><span class="tag c${x.k.idx}">${esc(x.k.name)}</span>${esc(x.grade.subject)}</b><small>${esc(x.grade.category || "Ocena")}${x.grade.teacher ? " · " + esc(x.grade.teacher) : ""}</small></div></li>`;
+        if (x.remark) {
+          const t = (x.remark.type || "").toLowerCase();
+          const cls = t.startsWith("neg") ? "neg" : t.startsWith("poz") ? "pos" : "";
+          return `<li><div class="main"><b><span class="tag c${x.k.idx}">${esc(x.k.name)}</span>${esc(x.remark.text)}</b><small>${esc(x.remark.teacher || "")}</small></div>${x.remark.type ? `<span class="chip ${cls}">${esc(x.remark.type)}</span>` : ""}</li>`;
+        }
+        return eventRow(x.ev, x.k, true);
+      }).join("")}</ul>` : `<p class="empty">Brak wpisów tego dnia.</p>`}</div>`;
   }
 
   // ---------- ikony (SVG, jeden spójny styl kreskowy) ----------
@@ -693,6 +748,8 @@
     sliders: '<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>',
     week: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M3 9h18M7 13h4M7 17h7"/>',
     user: '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.2-4 4.2-6 8-6s6.8 2 8 6"/>',
+    pencil: '<path d="M4 20l1-4L15.5 5.5a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8.5 19 4 20z"/><path d="M14 7l3 3"/>',
+    suitcase: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/>',
   };
   const icon = (name, cls = "") =>
     `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SVG[name] || ""}</svg>`;
