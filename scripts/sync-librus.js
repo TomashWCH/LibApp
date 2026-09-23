@@ -1121,6 +1121,24 @@ async function syncUser(user) {
   return status;
 }
 
+// ---------- Zdrowie synchronizacji (do licznika w appce: "ile zaplanowanych uruchomień GitHuba
+// faktycznie się odpaliło w ostatnich dniach") ----------
+// Zapisujemy wpis dla KAŻDEGO uruchomienia (udanego i nieudanego), ale tylko te ze zdarzenia
+// "schedule" liczą się do statystyki — ręczne uruchomienia (Run workflow) by ją zafałszowały.
+async function logSyncHealth(userDocRef, status) {
+  try {
+    const now = Date.now();
+    const isScheduled = process.env.GH_EVENT_NAME === "schedule";
+    const entry = { atMs: now, dateISO: isoInWarsaw(new Date(now)), isScheduled, status };
+    const snap = await userDocRef.get();
+    const prev = Array.isArray(snap.data()?.syncHealth) ? snap.data().syncHealth : [];
+    const trimmed = [...prev, entry].filter((e) => now - (e.atMs || 0) < 10 * 24 * 3600 * 1000).slice(-60);
+    await userDocRef.set({ syncHealth: trimmed }, { merge: true });
+  } catch (err) {
+    console.warn(`  ! nie udało się zapisać zdrowia synchronizacji: ${err.message}`);
+  }
+}
+
 async function main() {
   const results = [];
 
@@ -1132,8 +1150,11 @@ async function main() {
       continue;
     }
 
+    const userDocRef = db.collection("users").doc(user.firestoreUid);
+    let runStatus = "error";
     try {
       const status = await syncUser(user);
+      runStatus = status;
       results.push({ user: user.displayName, status });
     } catch (err) {
       console.error(`[${user.displayName}] BŁĄD:`, err.message);
@@ -1141,7 +1162,6 @@ async function main() {
 
       // Zapisujemy błąd do Firestore, żeby appka mogła pokazać status synchronizacji
       try {
-        const userDocRef = db.collection("users").doc(user.firestoreUid);
         await userDocRef.set(
           {
             lastSync: {
@@ -1163,6 +1183,7 @@ async function main() {
         console.error("Nie udało się zapisać błędu do Firestore:", writeErr.message);
       }
     }
+    await logSyncHealth(userDocRef, runStatus);
   }
 
   console.log("Podsumowanie synchronizacji:", results);
