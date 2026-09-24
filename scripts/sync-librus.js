@@ -736,7 +736,21 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
   const client = new Librus();
   // UWAGA: biblioteka połyka błędy logowania, dlatego niżej sprawdzamy, czy
   // Librus w ogóle zwrócił jakiekolwiek dane.
-  await client.authorize(login, password);
+  // Librus (albo połączenie do niego z serwerów GitHuba) bywa wolny — logowanie ma
+  // krótki, ustalony limit prób, zanim się poddamy (jak przy Gemini, ale mniej prób,
+  // bo to pierwszy krok i nie chcemy niepotrzebnie wydłużać każdej synchronizacji).
+  const LOGIN_RETRY_DELAYS_MS = [3000, 8000];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await client.authorize(login, password);
+      break;
+    } catch (err) {
+      if (attempt >= LOGIN_RETRY_DELAYS_MS.length) throw err;
+      const wait = LOGIN_RETRY_DELAYS_MS[attempt];
+      console.warn(`  ! logowanie do Librusa: ${err.message} — ponawiam za ${wait / 1000} s (${attempt + 1}/${LOGIN_RETRY_DELAYS_MS.length})`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
 
   const failures = [];
   const safe = (label, promise, fallback) =>
