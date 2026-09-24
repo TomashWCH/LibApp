@@ -224,6 +224,18 @@
   .delta.up { color: var(--ok); } .delta.down { color: var(--err); }
   .delta { font-size: 0.8rem; font-weight: 600; }
   .seg { display: flex; gap: 6px; margin: 10px 0 4px; flex-wrap: wrap; }
+  .cal-filter { margin: 12px 0 10px; }
+  .shortcuts-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .daydash { border-left: 4px solid var(--ch); }
+  .daydash .shortcuts-grid { grid-template-columns: repeat(4, 1fr); }
+  .daydash .short-btn { padding: 8px 2px; background: transparent; }
+  .daydash .short-btn .ic { width: 18px; height: 18px; }
+
+  .short-btn { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 12px 4px; border-radius: 14px; background: var(--bg); border: 0; position: relative; cursor: pointer; color: var(--ink); }
+  .short-btn .ic { width: 22px; height: 22px; color: var(--ch, var(--accent)); }
+  .short-btn .lbl { font-size: 0.72rem; font-weight: 600; text-align: center; line-height: 1.15; }
+  .short-btn .n { position: absolute; top: 4px; right: 10px; background: var(--err); color: #fff; font-size: 0.62rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+
   .seg button { background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 0.8rem; cursor: pointer; color: var(--muted); }
   .seg button.on { background: var(--ch-soft); color: var(--ch); border-color: transparent; font-weight: 700; }
   svg.chart { width: 100%; height: auto; display: block; }
@@ -508,7 +520,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-23 · 21"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-24 · 22"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -572,7 +584,7 @@
 
   // ---------- stan ----------
   const now0 = new Date();
-  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
+  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", calFilter: null, push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -766,12 +778,8 @@
   }
   const CAT_PRIORITY = ["exam", "grade", "remark", "trip", "event", "todo"];
 
-  function viewKalendarz(d) {
-    const kids = getChildren(d);
-    if (kids.length === 0) return `<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>`;
-
-    // wszystko, co ma datę, pogrupowane po dniu (bez odfiltrowywania przeszłości): terminy,
-    // oceny i uwagi — każde z rozpoznanym rodzajem (do piktogramu) i kolorem dziecka (do listy).
+  // Buduje mapę dzień -> wpisy (terminy, oceny, uwagi, zadania z terminem) dla wskazanych dzieci.
+  function buildDayIndex(d, kids) {
     const byDay = new Map();
     const push = (date, entry) => {
       if (!isoDate.test(date || "")) return;
@@ -786,22 +794,23 @@
       }
       for (const r of arr(k.sections?.remarks)) push(r.date, { remark: r, k, cat: "remark" });
     }
-
-    // zadania (WhatsApp i zadania domowe) z terminem też trafiają do kalendarza
     const doneSet = loadDone();
     for (const t of todoItems(d)) {
       if (!t.due || doneSet.has(t.id)) continue;
+      if (kids.length && !kids.some((k) => k.key === t.k?.key)) continue;
       push(t.due, { todo: t, k: t.k, cat: "todo" });
     }
+    return byDay;
+  }
 
-    const { y, m } = state.cal;
+  // Siatka miesiąca (piktogramy dnia). embedded=true: bez własnej nawigacji miesięcy —
+  // klik w dzień przenosi do zakładki Kalendarz z ustawionym filtrem i wybranym dniem.
+  function calendarGrid(byDay, y, m, opts = {}) {
     const first = new Date(y, m, 1);
-    const offset = (first.getDay() + 6) % 7; // poniedziałek = 0
+    const offset = (first.getDay() + 6) % 7;
     const dim = new Date(y, m + 1, 0).getDate();
     const total = Math.ceil((offset + dim) / 7) * 7;
     const today = todayISO();
-    const title = first.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
-
     let cells = ["Pn", "Wt", "Śr", "Cz", "Pt", "So", "Nd"].map((n) => `<div class="cal-dow">${n}</div>`).join("");
     for (let i = 0; i < total; i++) {
       const dt = new Date(y, m, 1 - offset + i);
@@ -816,14 +825,50 @@
           return `<i class="${b.cls}">${icon(b.icon)}</i>`;
         })
         .join("");
-      const cls = ["cal-day", dt.getMonth() !== m ? "off" : "", iso === today ? "today" : "", iso === state.calDay ? "sel" : ""].filter(Boolean).join(" ");
+      const cls = ["cal-day", dt.getMonth() !== m ? "off" : "", iso === today ? "today" : "", iso === opts.selDay ? "sel" : ""].filter(Boolean).join(" ");
       const label = `${dt.toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" })}${items.length ? ", wpisów: " + items.length : ""}`;
-      cells += `<button class="${cls}" data-day="${iso}" aria-label="${esc(label)}">${dt.getDate()}<span class="dots">${badges}</span></button>`;
+      const attr = opts.embedded ? `data-mini-day="${iso}"` : `data-day="${iso}"`;
+      cells += `<button class="${cls}" ${attr} aria-label="${esc(label)}">${dt.getDate()}<span class="dots">${badges}</span></button>`;
     }
+    return `<div class="cal-grid">${cells}</div>`;
+  }
 
+  function calLegend() {
+    return `<div class="legend"><span><i class="b-exam">${icon("pencil")}</i>sprawdzian/kartkówka</span><span><i class="b-grade4">${icon("star")}</i>ocena</span><span><i class="b-remark-neg">${icon("alert")}</i>uwaga</span><span><i class="b-trip">${icon("suitcase")}</i>wycieczka</span><span><i class="b-event">${icon("calendar")}</i>inny termin</span></div>`;
+  }
+
+  function dayListRows(byDay, selDay) {
     const timeOf = (x) => (x.ev ? x.ev.time || "" : x.cat === "grade" || x.cat === "remark" ? "00:00" : "99:99");
     const catOrder = (c) => CAT_PRIORITY.indexOf(c);
-    const list = (byDay.get(state.calDay) || []).slice().sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || timeOf(a).localeCompare(timeOf(b)));
+    const list = (byDay.get(selDay) || []).slice().sort((a, b) => catOrder(a.cat) - catOrder(b.cat) || timeOf(a).localeCompare(timeOf(b)));
+    if (!list.length) return `<p class="empty">Brak wpisów tego dnia.</p>`;
+    return `<ul class="rows">${list.map((x) => {
+      if (x.todo) return todoRow(x.todo, false, false);
+      if (x.grade) return `<li>${gradeChip(x.grade)}<div class="main"><b><span class="tag c${x.k.idx}">${esc(x.k.name)}</span>${esc(x.grade.subject)}</b><small>${esc(x.grade.category || "Ocena")}${x.grade.teacher ? " · " + esc(x.grade.teacher) : ""}</small></div></li>`;
+      if (x.remark) {
+        const t = (x.remark.type || "").toLowerCase();
+        const cls = t.startsWith("neg") ? "neg" : t.startsWith("poz") ? "pos" : "";
+        return `<li><div class="main"><b><span class="tag c${x.k.idx}">${esc(x.k.name)}</span>${esc(x.remark.text)}</b><small>${esc(x.remark.teacher || "")}</small></div>${x.remark.type ? `<span class="chip ${cls}">${esc(x.remark.type)}</span>` : ""}</li>`;
+      }
+      return eventRow(x.ev, x.k, true);
+    }).join("")}</ul>`;
+  }
+
+  function viewKalendarz(d) {
+    const allKids = getChildren(d);
+    if (allKids.length === 0) return `<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>`;
+    const kids = state.calFilter ? allKids.filter((k) => k.key === state.calFilter) : allKids;
+
+    const byDay = buildDayIndex(d, kids);
+    const { y, m } = state.cal;
+    const first = new Date(y, m, 1);
+    const title = first.toLocaleDateString("pl-PL", { month: "long", year: "numeric" });
+
+    const filterBar = `<div class="seg cal-filter">
+      <button data-calfilter="" class="${!state.calFilter ? "on" : ""}" aria-pressed="${!state.calFilter}">Wszystkie</button>
+      ${allKids.map((k) => `<button data-calfilter="${esc(k.key)}" class="c${k.idx} ${state.calFilter === k.key ? "on" : ""}" aria-pressed="${state.calFilter === k.key}">${esc(k.name)}</button>`).join("")}
+    </div>`;
+
     const [sy, sm, sd] = state.calDay.split("-").map(Number);
     const dayTitle = new Date(sy, sm - 1, sd).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
 
@@ -835,19 +880,22 @@
           <button class="cal-btn" data-calnav="1" aria-label="Następny miesiąc">›</button>
         </div>
       </div>
-      <div class="cal-grid">${cells}</div>
-      <div class="legend"><span><i class="b-exam">${icon("pencil")}</i>sprawdzian/kartkówka</span><span><i class="b-grade4">${icon("star")}</i>ocena</span><span><i class="b-remark-neg">${icon("alert")}</i>uwaga</span><span><i class="b-trip">${icon("suitcase")}</i>wycieczka</span><span><i class="b-event">${icon("calendar")}</i>inny termin</span></div>
+      ${filterBar}
+      ${calendarGrid(byDay, y, m, { selDay: state.calDay })}
+      ${calLegend()}
       <h2 class="sec cap1">${esc(dayTitle)}</h2>
-      <div class="card">${list.length ? `<ul class="rows">${list.map((x) => {
-        if (x.todo) return todoRow(x.todo, false, false);
-        if (x.grade) return `<li>${gradeChip(x.grade)}<div class="main"><b><span class="tag c${x.k.idx}">${esc(x.k.name)}</span>${esc(x.grade.subject)}</b><small>${esc(x.grade.category || "Ocena")}${x.grade.teacher ? " · " + esc(x.grade.teacher) : ""}</small></div></li>`;
-        if (x.remark) {
-          const t = (x.remark.type || "").toLowerCase();
-          const cls = t.startsWith("neg") ? "neg" : t.startsWith("poz") ? "pos" : "";
-          return `<li><div class="main"><b><span class="tag c${x.k.idx}">${esc(x.k.name)}</span>${esc(x.remark.text)}</b><small>${esc(x.remark.teacher || "")}</small></div>${x.remark.type ? `<span class="chip ${cls}">${esc(x.remark.type)}</span>` : ""}</li>`;
-        }
-        return eventRow(x.ev, x.k, true);
-      }).join("")}</ul>` : `<p class="empty">Brak wpisów tego dnia.</p>`}</div>`;
+      <div class="card">${dayListRows(byDay, state.calDay)}</div>`;
+  }
+
+  // Osadzony w karcie dziecka mały kalendarz bieżącego miesiąca (bez własnej nawigacji) —
+  // klik w dzień przenosi do wspólnej zakładki Kalendarz, już przefiltrowanej do tego dziecka.
+  function miniCalendar(d, child) {
+    const now = new Date();
+    const byDay = buildDayIndex(d, [child]);
+    return `<div class="card" id="sec-calendar" data-child-scope="${esc(child.key)}"><div class="sect-title"><h3>${icon("calendar")} Kalendarz</h3></div>
+      ${calendarGrid(byDay, now.getFullYear(), now.getMonth(), { embedded: true, selDay: todayISO() })}
+      <p class="empty" style="margin-top:8px">Dotknij dnia, aby zobaczyć szczegóły we wspólnym kalendarzu.</p>
+    </div>`;
   }
 
   // ---------- ikony (SVG, jeden spójny styl kreskowy) ----------
@@ -1040,7 +1088,7 @@
       ? `<div class="sub-hd">Nowe oceny · 7 dni</div><ul class="rows newg">${fresh.slice(0, 6).map((g) => `<li>${gradeChip(g)}<div class="main"><b>${esc(g.subject)}</b><small>${esc(relDay(g.date))}${g.category ? " · " + esc(g.category) : ""}</small></div></li>`).join("")}</ul>${fresh.length > 6 ? `<p class="empty">i ${fresh.length - 6} więcej — poniżej przy przedmiotach</p>` : ""}`
       : "";
 
-    return `<div class="card">
+    return `<div class="card" id="sec-grades">
       <div class="avg-head"><div><h3>${icon("star")} Oceny</h3><small>${numericScoped ? `średnia z ${(() => { const n = [...bySubject(scoped.filter((g) => g.date && g.date <= today)).values()].filter((l) => wavg(l) != null).length; return `${n} ${n === 1 ? "przedmiotu" : "przedmiotów"}`; })()}` : "oceny opisowe, bez średniej"}</small></div>
         <div style="text-align:right"><div class="big">${numericScoped ? fmtAvg(cur) : scoped.length}</div>${numericScoped ? deltaHtml : `<div class="delta" style="color:var(--muted)">${plOcen(scoped.length).replace(/^\d+ /, "")}</div>`}</div></div>
       <div class="seg">${seg}</div>
@@ -1250,14 +1298,14 @@
     const planBody = days.map((x, i) => `<details class="plan" ${i === 0 ? "open" : ""}><summary class="cap1">${esc(longDate(x.date))} · ${x.lessons.length}${x.lessons.length === 1 ? " zajęcie" : x.lessons.length >= 2 && x.lessons.length <= 4 ? " zajęcia" : " zajęć"}</summary>${lessonsList(x.lessons)}</details>`).join("");
     const abs = c.extra?.absence;
     const absHtml = abs && abs.total > 0
-      ? `<div class="card t-att"><div class="sect-title"><h3>${icon("calendar")} Frekwencja</h3><span class="badge">${abs.total}</span></div>
+      ? `<div class="card t-att" id="sec-attendance"><div class="sect-title"><h3>${icon("calendar")} Frekwencja</h3><span class="badge">${abs.total}</span></div>
           <div class="wk-chips">${Object.entries(abs.byType).map(([t, n]) => `<span class="chip">${esc(t)}: ${n}</span>`).join("")}</div>
           <ul class="rows">${abs.days.slice(0, 10).map((d) => `<li><div class="main"><b>${fmtDate(d.date)}</b><small>${Object.entries(d.counts).map(([t, n]) => `${esc(t)}${n > 1 ? ` ×${n}` : ""}`).join(", ")}</small></div></li>`).join("")}</ul>
           ${abs.days.length > 10 ? `<p class="empty">i ${abs.days.length - 10} więcej dni</p>` : ""}
         </div>`
       : "";
-    return `${section("book", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.", null, "hw")}
-      <div class="card t-plan"><div class="sect-title"><h3>${icon("clock")} Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>
+    return `${section("book", "Zadania domowe", hw.length, hwBody, "Brak zadań domowych w najbliższych tygodniach.", null, "hw", "sec-homework")}
+      <div class="card t-plan" id="sec-plan"><div class="sect-title"><h3>${icon("clock")} Plan lekcji</h3></div>${days.length ? planBody : `<p class="empty">Brak planu na najbliższe dni.</p>`}</div>
       ${absHtml}`;
   }
 
@@ -1541,6 +1589,27 @@
     </div>`;
   }
 
+  // Mały "dashboard dnia" na Pulpicie — tylko dzisiejsze wpisy, osobno dla każdego dziecka.
+  // Klik w ikonę przenosi do karty dziecka i przewija do właściwej sekcji.
+  function todayDashboard(k) {
+    const today = todayISO();
+    const gradesToday = gradesOf(k).filter((g) => g.date === today && !g.final).length;
+    const remarksToday = arr(k.sections?.remarks).filter((r) => r.date === today).length;
+    const msgsToday = (Array.isArray(k.extra?.messages) ? k.extra.messages : arr(k.sections?.messages))
+      .filter((m) => (m.data || m.date) === today).length;
+    const eventsToday = allEvents(k).filter((ev) => ev.date === today).length;
+    const items = [
+      { id: "sec-grades", icon: "star", label: "Oceny", n: gradesToday },
+      { id: "sec-remarks", icon: "alert", label: "Uwagi", n: remarksToday },
+      { id: "sec-messages", icon: "mail", label: "Wiadomości", n: msgsToday },
+      { id: "sec-events", icon: "calendar", label: "Ważne", n: eventsToday },
+    ];
+    return `<div class="card daydash c${k.idx}"><div class="sect-title"><h3><span class="tag c${k.idx}">${esc(k.name)}</span> dziś</h3></div>
+      <div class="shortcuts-grid">${items.map((it) => `
+        <button class="short-btn" data-goto-scroll="${esc(k.key)}|${it.id}">${icon(it.icon)}<span class="lbl">${esc(it.label)}</span>${it.n > 0 ? `<span class="n">${it.n > 99 ? "99+" : it.n}</span>` : ""}</button>`).join("")}
+      </div></div>`;
+  }
+
   function viewPulpit(d) {
     const kids = getChildren(d);
     if (kids.length === 0) {
@@ -1570,15 +1639,16 @@
     const today = todayISO();
     const sunday = new Date().getDay() === 0;
     const week = weekCard(d, sunday);
-    return `${searchCard(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    const dashboards = `<h2 class="sec">Dziś w skrócie</h2>${all.map(({ k }) => todayDashboard(k)).join("")}`;
+    return `${searchCard(d)}${dashboards}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
       ${settingsCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
       <p class="empty" style="text-align:center;font-size:0.75rem">Wersja appki: ${BUILD}</p>`;
   }
 
-  function section(iconName, title, count, body, emptyText, badgeText, tint) {
-    return `<div class="card${tint ? ` t-${tint}` : ""}">
+  function section(iconName, title, count, body, emptyText, badgeText, tint, id) {
+    return `<div class="card${tint ? ` t-${tint}` : ""}"${id ? ` id="${id}"` : ""}>
       <div class="sect-title"><h3>${icon(iconName)} ${title}</h3>${count > 0 ? `<span class="badge">${badgeText || count}</span>` : ""}</div>
       ${count > 0 ? `<ul class="rows">${body}</ul>` : `<p class="empty">${emptyText}</p>`}
     </div>`;
@@ -1613,7 +1683,7 @@
         : st === "not_found" ? "Nie znaleziono grupy o nazwie z sekretu WHATSAPP_GROUPS. Porównaj nazwę z listą grup na karcie WhatsApp na pulpicie."
         : st === "error" ? "Nie udało się streścić wiadomości z grupy. Spróbuję przy następnej synchronizacji."
         : "Grupa nie jest jeszcze podłączona albo czeka na pierwszą synchronizację.";
-      return `<div class="card t-wa"><div class="sect-title">${title}</div><p class="empty">${text}</p>${waStatLine(c, d)}</div>`;
+      return `<div class="card t-wa" id="sec-whatsapp"><div class="sect-title">${title}</div><p class="empty">${text}</p>${waStatLine(c, d)}</div>`;
     }
     const entries = waRecent(c, 48).sort((a, b) => b.atMs - a.atMs);
     const dayName = (ms) => {
@@ -1631,8 +1701,26 @@
         ${todo.length ? `<div class="wa-h">Do zrobienia</div><ul class="wa-list todo">${todo.map((t) => `<li>${esc(t.text)}${t.due ? ` <span class="sub">(do ${fmtDate(t.due)})</span>` : ""}</li>`).join("")}</ul>` : ""}
       </div>`;
     }).join("");
-    return `<div class="card t-wa"><div class="sect-title">${title}${entries.length ? `<span class="badge">${entries.length}</span>` : ""}</div>
+    return `<div class="card t-wa" id="sec-whatsapp"><div class="sect-title">${title}${entries.length ? `<span class="badge">${entries.length}</span>` : ""}</div>
       ${entries.length ? body : `<p class="empty">Brak nowych wiadomości w grupie z ostatnich 48 godzin.</p>`}${waStatLine(c, d)}</div>`;
+  }
+
+  // Pasek skrótów na górze karty dziecka — jeden klik przewija do właściwej sekcji niżej.
+  function shortcutsBar(c, s, extraCounts) {
+    const items = [
+      { id: "sec-grades", icon: "star", label: "Oceny", n: s.grades.length },
+      { id: "sec-remarks", icon: "alert", label: "Uwagi", n: s.remarks.length },
+      { id: "sec-events", icon: "calendar", label: "Wydarzenia", n: s.events.length },
+      { id: "sec-messages", icon: "mail", label: "Wiadomości", n: extraCounts.messages },
+      { id: "sec-homework", icon: "book", label: "Zadania", n: extraCounts.homework },
+      { id: "sec-plan", icon: "clock", label: "Plan lekcji", n: extraCounts.lessons },
+      { id: "sec-attendance", icon: "calendar", label: "Frekwencja", n: extraCounts.attendance },
+      { id: "sec-whatsapp", icon: "chat", label: "WhatsApp", n: extraCounts.whatsapp },
+      { id: "sec-calendar", icon: "calendar", label: "Kalendarz", n: 0 },
+    ];
+    return `<div class="card shortcuts"><div class="shortcuts-grid">${items.map((it) => `
+      <button class="short-btn" data-scrollto="${it.id}">${icon(it.icon)}<span class="lbl">${esc(it.label)}</span>${it.n > 0 ? `<span class="n">${it.n > 99 ? "99+" : it.n}</span>` : ""}</button>`).join("")}
+    </div></div>`;
   }
 
   function viewChild(d, key) {
@@ -1679,9 +1767,24 @@
 
     const events = s.events.map((ev) => eventRow(ev, c, false)).join("");
 
+    // Zliczenia do paska skrótów (te same liczby, co przy poszczególnych sekcjach niżej).
+    const doneForCounts = loadDone();
+    const todayForCounts = todayISO();
+    const hwCount = todoItems(d).filter((t) => t.kind === "hw" && t.k.key === c.key).length;
+    const lessonsCount = Array.from({ length: 8 }, (_, n) => shiftISO(todayForCounts, n))
+      .reduce((sum, iso) => sum + lessonsForDate(c.key, c.extra?.timetable, iso).length, 0);
+    const shortcutCounts = {
+      messages: msgFull ? unread : s.messages.filter((m) => m.unread).length,
+      homework: hwCount,
+      lessons: lessonsCount,
+      attendance: c.extra?.absence?.total || 0,
+      whatsapp: c.wa ? waRecent(c, 48).length : 0,
+    };
+
     return `<div class="c${c.idx}">
       <div class="child-head"><span class="avatar">${esc((c.name || "?").charAt(0).toUpperCase())}</span>
         <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}${c.extra?.luckyNumber != null ? ` · ${icon("sparkle")} numerek ${esc(c.extra.luckyNumber)}` : ""}</small></div></div>
+      ${hasSections ? shortcutsBar(c, s, shortcutCounts) : ""}
       ${c.lastError ? `<div class="warnbox">Ostatnie odświeżenie się nie udało: ${esc(c.lastError)}. Widać dane z poprzedniej synchronizacji.</div>` : ""}
       ${c.summary ? `<div class="card"><p class="sum" style="margin:0">${esc(c.summary)}</p></div>` : ""}
       ${(c.insights?.grades || c.insights?.remarks) ? `<div class="card"><div class="sect-title"><h3>${icon("sparkle")} Zauważyłem</h3></div>
@@ -1689,12 +1792,13 @@
         ${c.insights.remarks ? `<p class="sum" style="margin:0"><span title="uwagi">${icon("alert")}</span> ${esc(c.insights.remarks)}</p>` : ""}
       </div>` : ""}
       ${hasSections ? `
-        ${c.extra?.gradeList ? gradesSection(c) : section("star", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`)}
-        ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.", null, "remark")}
-        ${section("calendar", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.", null, "event")}
-        ${section("mail", "Wiadomości", messagesCount, messages, msgFull ? "Brak wiadomości w skrzynce." : "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${messagesCount}`, "msg")}
+        ${c.extra?.gradeList ? gradesSection(c) : section("star", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`, null, "sec-grades")}
+        ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.", null, "remark", "sec-remarks")}
+        ${section("calendar", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.", null, "event", "sec-events")}
+        ${section("mail", "Wiadomości", messagesCount, messages, msgFull ? "Brak wiadomości w skrzynce." : "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${messagesCount}`, "msg", "sec-messages")}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
       ${extraSections(c, d)}
+      ${miniCalendar(d, c)}
       ${whatsappSection(c, d)}
     </div>`;
   }
@@ -1815,6 +1919,16 @@
   document.addEventListener("click", (e) => {
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    const gotoScroll = e.target.closest("[data-goto-scroll]");
+    if (gotoScroll) {
+      const [childKey, secId] = gotoScroll.dataset.gotoScroll.split("|");
+      state.view = childKey;
+      render();
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.getElementById(secId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
+      return;
+    }
     if (e.target.closest("#add-todo-btn")) { addManualTodo(); return; }
     if (e.target.closest("#search-btn")) { runSearch(); return; }
     const delTodo = e.target.closest("[data-del-todo]");
@@ -1866,6 +1980,28 @@
     }
     const add = e.target.closest("[data-add]");
     if (add) { onAdd(add.dataset.add, add); return; }
+    const scrollBtn = e.target.closest("[data-scrollto]");
+    if (scrollBtn) {
+      document.getElementById(scrollBtn.dataset.scrollto)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const calFilterBtn = e.target.closest("[data-calfilter]");
+    if (calFilterBtn) {
+      state.calFilter = calFilterBtn.dataset.calfilter || null;
+      render();
+      return;
+    }
+    const miniDay = e.target.closest("[data-mini-day]");
+    if (miniDay) {
+      const child = e.target.closest("[data-child-scope]")?.dataset.childScope;
+      const [yy, mm] = miniDay.dataset.miniDay.split("-").map(Number);
+      state.calFilter = child || null;
+      state.calDay = miniDay.dataset.miniDay;
+      state.cal = { y: yy, m: mm - 1 };
+      state.view = "kalendarz";
+      render();
+      return;
+    }
     if (e.target.closest("#logout-btn")) signOut(auth);
   });
 
