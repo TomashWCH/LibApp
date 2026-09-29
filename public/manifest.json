@@ -1,6 +1,6 @@
 {
-  "name": "Podsumowanie dnia",
-  "short_name": "Podsumowanie",
+  "name": "LibApp — Podsumowanie dnia",
+  "short_name": "LibApp",
   "description": "Librus i WhatsApp w jednym miejscu: oceny, terminy, zadania i przegląd tygodnia.",
   "lang": "pl",
   "start_url": "./index.html",

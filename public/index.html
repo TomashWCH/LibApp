@@ -520,7 +520,8 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-24 · 22"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-24 · 23"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
   // oboje rodzice widzą te same dane, odhaczenia i ustawienia, niezależnie tym, kto jest zalogowany.
@@ -1126,7 +1127,7 @@
     setDoc(ref, { done: ids, updatedAt: Date.now() }, { merge: true }).catch(() => {
       state.prefs = "error";
       remoteDone = null;
-      if (!prefsWarned) { prefsWarned = true; toast("Nie udało się zapisać odhaczeń w chmurze. Zaktualizuj reguły Firestore.", true); }
+      if (!prefsWarned) { prefsWarned = true; toast("Nie udało się zapisać w chmurze — zmiana widoczna tylko na tym urządzeniu.", true); }
       render();
     });
   }
@@ -1278,7 +1279,7 @@
       ? `<details class="card plan"><summary>Zrobione · ${closed.length}</summary><ul class="rows">${closed.map((t) => todoRow(t, true, false)).join("")}</ul></details>`
       : "";
     return `${addTodoForm()}${html || `<div class="card"><p class="empty">Nic do zrobienia. Zadania z grup WhatsApp i zadania domowe z Librusa pojawią się tutaj.</p></div>`}${closedHtml}
-      <p class="empty" style="margin-top:12px">${state.prefs === "ok" ? "Odhaczone zadania synchronizują się między Twoimi urządzeniami." : state.prefs === "error" ? "Synchronizacja odhaczeń jest wyłączona (reguły Firestore nie pozwalają na zapis). Odhaczenia zapamiętuje ta przeglądarka." : ""}</p>`;
+      <p class="empty" style="margin-top:12px">${state.prefs === "ok" ? "Odhaczone zadania synchronizują się między Twoimi urządzeniami." : state.prefs === "error" ? "Zapis w chmurze jest teraz niedostępny. Odhaczenia zapamiętuje na razie tylko ta przeglądarka." : ""}</p>`;
   }
 
   // Zadania domowe i plan lekcji w widoku dziecka.
@@ -1463,7 +1464,7 @@
     try {
       await setDoc(ref, { manualTodos: list }, { merge: true });
     } catch {
-      toast("Nie udało się zapisać zadania (sprawdź reguły Firestore).", true);
+      toast("Nie udało się zapisać zadania. Spróbuj ponownie za chwilę.", true);
     }
   }
 
@@ -1476,7 +1477,7 @@
     try {
       await setDoc(ref, { manualTodos: list }, { merge: true });
     } catch {
-      toast("Nie udało się usunąć zadania (sprawdź reguły Firestore).", true);
+      toast("Nie udało się usunąć zadania. Spróbuj ponownie za chwilę.", true);
     }
   }
 
@@ -1490,7 +1491,7 @@
       await setDoc(ref, { names }, { merge: true });
       toast("Zapisano imiona.");
     } catch {
-      toast("Nie udało się zapisać (sprawdź reguły Firestore).", true);
+      toast("Nie udało się zapisać. Spróbuj ponownie za chwilę.", true);
     }
     render();
   }
@@ -1511,7 +1512,7 @@
     letterMap = Object.keys(parsed).length ? parsed : parseLetterMap(DEFAULT_LETTERS);
     state.scaleText = Object.keys(parsed).length ? value : "";
     const ref = prefsRef();
-    if (ref) setDoc(ref, { letterScale: value }, { merge: true }).then(() => toast("Zapisano skalę.")).catch(() => toast("Nie udało się zapisać (sprawdź reguły Firestore).", true));
+    if (ref) setDoc(ref, { letterScale: value }, { merge: true }).then(() => toast("Zapisano skalę.")).catch(() => toast("Nie udało się zapisać. Spróbuj ponownie za chwilę.", true));
     render();
   }
 
@@ -1529,9 +1530,9 @@
     const missed = Math.max(0, expected - recent.length);
     const failed = recent.filter((e) => e.status === "error").length;
     const okText = missed === 0
-      ? `Wszystkie ${recent.length} z ${expected} zaplanowanych uruchomień w ostatnich ${daysTracked} dn. odpaliło się.`
-      : `${recent.length} z ${expected} zaplanowanych uruchomień w ostatnich ${daysTracked} dn. — ${missed} w ogóle się nie odpaliło (GitHub je pominął).`;
-    return `<p class="empty">${okText}${failed ? ` W tym ${failed} z błędem (nie kwestia harmonogramu, tylko np. Librusa czy Gemini).` : ""}</p>`;
+      ? `Wszystkie ${recent.length} z ${expected} zaplanowanych odświeżeń w ostatnich ${daysTracked} dn. się udało.`
+      : `${recent.length} z ${expected} zaplanowanych odświeżeń w ostatnich ${daysTracked} dn. się udało — ${missed} w ogóle się nie uruchomiło.`;
+    return `<p class="empty">${okText}${failed ? ` W tym ${failed} zakończyło się błędem (np. szkoła lub asystent AI chwilowo nie odpowiadały).` : ""}</p>`;
   }
 
   function settingsCard(d) {
@@ -1644,7 +1645,7 @@
       ${whatsappCard(d)}
       ${settingsCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
-      <p class="empty" style="text-align:center;font-size:0.75rem">Wersja appki: ${BUILD}</p>`;
+      <p class="empty" style="text-align:center;font-size:0.75rem">Wersja z ${BUILD_DISPLAY}</p>`;
   }
 
   function section(iconName, title, count, body, emptyText, badgeText, tint, id) {
@@ -1713,8 +1714,10 @@
       { id: "sec-events", icon: "calendar", label: "Wydarzenia", n: s.events.length },
       { id: "sec-messages", icon: "mail", label: "Wiadomości", n: extraCounts.messages },
       { id: "sec-homework", icon: "book", label: "Zadania", n: extraCounts.homework },
-      { id: "sec-plan", icon: "clock", label: "Plan lekcji", n: extraCounts.lessons },
-      { id: "sec-attendance", icon: "calendar", label: "Frekwencja", n: extraCounts.attendance },
+      // Plan lekcji i Frekwencja to liczby porządkowe, nie "coś nowego do sprawdzenia" — bez odznaki,
+      // żeby nie wyglądały jak alert obok Ocen/Uwag/Wiadomości.
+      { id: "sec-plan", icon: "clock", label: "Plan lekcji", n: 0 },
+      { id: "sec-attendance", icon: "calendar", label: "Frekwencja", n: 0 },
       { id: "sec-whatsapp", icon: "chat", label: "WhatsApp", n: extraCounts.whatsapp },
       { id: "sec-calendar", icon: "calendar", label: "Kalendarz", n: 0 },
     ];
@@ -2006,7 +2009,7 @@
   });
 
   $("#login-btn").addEventListener("click", () => {
-    signInWithPopup(auth, provider).catch((e) => alert("Błąd logowania: " + e.message));
+    signInWithPopup(auth, provider).catch((e) => toast("Logowanie nie powiodło się. Spróbuj ponownie.", true));
   });
 
   let unsubscribe = null;
@@ -2022,7 +2025,7 @@
       $("#greeting").textContent = `Cześć, ${user.displayName?.split(" ")[0] || ""}!`;
       // user.uid musi być wpisany do scripts/users.config.json (firestoreUid)
       unsubscribe = onSnapshot(doc(db, "users", OWNER_UID), (snap) => { state.data = snap.data() || null; render(); },
-        (err) => { $("#sync-dot").className = "dot error"; $("#sync-text").textContent = "Brak dostępu do danych: " + err.message; });
+        (err) => { $("#sync-dot").className = "dot error"; $("#sync-text").textContent = "Brak dostępu do danych. Spróbuj się wylogować i zalogować ponownie."; console.error("Firestore:", err); });
       unsubPrefs = onSnapshot(doc(db, "users", OWNER_UID, "prefs", "state"), (snap) => {
         state.prefs = "ok";
         state.names = (snap.exists() && snap.data().names) || {};
