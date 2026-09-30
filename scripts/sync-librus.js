@@ -254,6 +254,17 @@ function safeMonthsAhead(now, count) {
 
 // ---------- Plan lekcji, zadania domowe, szczęśliwy numerek (bez Gemini — parsowanie wprost) ----------
 const cleanText = (v, max = 120) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+
+// Rozpoznaje typ uwagi po słowach, których Librus sam używa w treści wiadomości
+// (ten sam słownik, którego wcześniej używał prompt do Gemini dla tego konta — już
+// sprawdzony na prawdziwych danych, więc nie zgaduję na ślepo).
+function classifyRemarkType(text) {
+  const t = String(text ?? "").toLowerCase();
+  if (/negatywn/.test(t)) return "negatywna";
+  if (/pozytywn/.test(t)) return "pozytywna";
+  if (/informacyjn|neutraln/.test(t)) return "informacja";
+  return null;
+}
 const DAY_KEYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function addDaysISO(iso, n) {
@@ -293,6 +304,11 @@ function parseTimetable(res, mondayISO) {
 // ---------- Pełna treść wiadomości (żeby czytać je w appce, bez przełączania do Librusa) ----------
 const MESSAGE_BODY_LIMIT = 20; // ile wiadomości max pobieramy w jednej synchronizacji (nieprzeczytane najpierw)
 const MESSAGE_BODY_CONCURRENCY = 3;
+// Uwagi zawsze mają ten sam, stały temat ("Dodano uwagę dla ucznia ..."), więc rozpoznajemy je
+// po wzorcu, bez udziału AI — i pobieramy ich treść ZAWSZE, niezależnie od MESSAGE_BODY_LIMIT
+// i od tego, czy są przeczytane, żeby żadna uwaga nigdy nie wypadła z appki.
+const REMARK_TITLE_PREFIX = "Dodano uwagę dla ucznia";
+const isRemarkTitle = (title) => String(title ?? "").trim().startsWith(REMARK_TITLE_PREFIX);
 
 // ---------- Załączniki PDF: pobranie i streszczenie przez Gemini (z pamięcią wyników) ----------
 const PDF_NEW_LIMIT = 3; // ile NOWYCH załączników max analizujemy w jednej synchronizacji (biblioteka do Librusa bywa tu wolna/kapryśna)
@@ -390,10 +406,14 @@ Odpowiedz WYŁĄCZNIE poprawnym JSON-em z dokładnie tymi czterema polami.
 // attachmentCache: Map "messageId:nazwaPliku" -> wcześniej policzona analiza PDF (żeby nie
 // płacić za to samo dwa razy przy każdej synchronizacji).
 async function fetchMessageBodies(client, wiadomosciZrodlo, attachmentCache = new Map()) {
-  const candidates = wiadomosciZrodlo
-    .filter((m) => Number.isFinite(m.id))
+  const withId = wiadomosciZrodlo.filter((m) => Number.isFinite(m.id));
+  const remarks = withId.filter((m) => isRemarkTitle(m.title));
+  const rest = withId
+    .filter((m) => !isRemarkTitle(m.title))
     .sort((a, b) => Number(!!a.read) - Number(!!b.read)) // nieprzeczytane (read: false) najpierw
     .slice(0, MESSAGE_BODY_LIMIT);
+  // Uwagi zawsze na liście (nie wliczają się do MESSAGE_BODY_LIMIT), reszta jak dotychczas.
+  const candidates = [...remarks, ...rest];
 
   const out = [];
   let i = 0;
@@ -861,6 +881,21 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
 
   const messageBodies = await fetchMessageBodies(client, wiadomosciZrodlo, attachmentCache);
 
+  // Uwagi wyłowione z wiadomości po stałym wzorcu tematu (patrz REMARK_TITLE_PREFIX) — bez
+  // udziału AI, więc nie zależy od tego, czy Gemini akurat "zauważy" uwagę w danym oknie czasu.
+  // "id" wiadomości jest stabilnym kluczem do bazy: ta sama uwaga nigdy nie zduplikuje się
+  // przy kolejnych synchronizacjach, a merge z poprzednim stanem (w index.js) dba o to, żeby
+  // raz znaleziona uwaga już nigdy nie zniknęła, nawet jeśli wypadnie poza to, co Librus pokazuje.
+  const remarkList = messageBodies
+    .filter((m) => isRemarkTitle(m.temat))
+    .map((m) => ({
+      id: m.id,
+      date: normalizeDay(m.data) || null,
+      teacher: cleanText(String(m.od || "").replace(/\s*\[Nauczyciel\]\s*$/i, ""), 80),
+      text: cleanText(m.tresc, 1000),
+      type: classifyRemarkType(m.tresc),
+    }));
+
   const extra = {
     timetable: asArray(timetableWeeks)
       .flat()
@@ -869,9 +904,10 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     luckyNumber: Number.isFinite(lucky) ? lucky : null,
     gradeList: buildGradeList(subjects, gradeBoxes),
     messages: messageBodies,
+    remarkList,
     absence: buildAbsenceSummary(absenceGroups),
   };
-  console.log(`  wiadomości: w skrzynce ${wiadomosciZrodlo.length}, pobrano pełną treść: ${messageBodies.length}`);
+  console.log(`  wiadomości: w skrzynce ${wiadomosciZrodlo.length}, pobrano pełną treść: ${messageBodies.length} (w tym uwag: ${remarkList.length})`);
   // Diagnostyka bez nazw i treści: ile ocen znalazła biblioteka, ile wszystkie pola i jakie wartości nie są cyframi.
   const letters = {};
   for (const g of extra.gradeList) if (g.base == null) letters[g.value] = (letters[g.value] || 0) + 1;
@@ -882,7 +918,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
 
 // ---------- Synchronizacja ----------
 // Pobiera i streszcza dane jednego dziecka.
-async function syncChild(child, attachmentCache) {
+async function syncChild(child, attachmentCache, previousRemarks = []) {
   const loginEnv = `LIBRUS_LOGIN_${child.secretSuffix}`;
   const passEnv = `LIBRUS_PASSWORD_${child.secretSuffix}`;
   const login = process.env[loginEnv];
@@ -900,8 +936,16 @@ async function syncChild(child, attachmentCache) {
   console.log(`[${child.name}] Logowanie do Librusa i pobieranie danych...`);
   const raw = await fetchLibrusData(login, password, today, since, until, attachmentCache);
 
+  // Scalenie: nowo znalezione uwagi + te z poprzednich synchronizacji, po id wiadomości
+  // (stabilny, unikalny klucz) — nowsza wersja (jeśli ta sama uwaga pojawiła się w obu)
+  // wygrywa, ale żadna raz zauważona uwaga nie ginie.
+  const mergedRemarks = new Map();
+  for (const r of previousRemarks) if (r?.id != null) mergedRemarks.set(r.id, r);
+  for (const r of raw.extra.remarkList) if (r?.id != null) mergedRemarks.set(r.id, r);
+  raw.extra.remarkList = [...mergedRemarks.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+
   console.log(
-    `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"})`
+    `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"}), uwagi łącznie: ${raw.extra.remarkList.length}`
   );
   const gradeTrends = computeGradeTrends(raw.extra.gradeList, today);
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
@@ -1043,11 +1087,15 @@ async function syncUser(user) {
     }
     return cache;
   };
+  // Uwagi znalezione w poprzednich synchronizacjach — dokładane do nowo znalezionych (nie
+  // nadpisywane), żeby raz zauważona uwaga nigdy nie zniknęła, nawet jeśli z czasem wypadnie
+  // poza to, co Librus obecnie pokazuje w skrzynce.
+  const getPreviousRemarks = (secretSuffix) => asArray(previousChildren[secretSuffix]?.extra?.remarkList);
 
   const results = [];
   for (const child of children) {
     try {
-      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix))) });
+      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix), getPreviousRemarks(child.secretSuffix))) });
     } catch (err) {
       console.error(`[${child.name}] BŁĄD:`, err.message);
       results.push({ child, ok: false, error: err.message });
