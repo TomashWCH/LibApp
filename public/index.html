@@ -211,6 +211,18 @@
   .nb { position: absolute; top: 2px; left: calc(50% + 6px); background: var(--err); color: #fff; font-size: 0.65rem; font-weight: 700; border-radius: 999px; min-width: 16px; height: 16px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; }
   /* oceny */
   .gc { font-style: normal; font-size: 0.78rem; font-weight: 700; min-width: 26px; text-align: center; padding: 2px 6px; border-radius: 8px; display: inline-block; font-variant-numeric: tabular-nums; }
+  .rc { font-style: normal; font-size: 0.92rem; font-weight: 800; width: 26px; height: 26px; line-height: 26px; text-align: center; border-radius: 50%; display: inline-block; cursor: pointer; }
+  .rc.pos { background: var(--ok-soft); color: var(--ok); }
+  .rc.neg { background: var(--err-soft); color: var(--err); }
+  .rc.info { background: var(--line); color: var(--muted); }
+  .remark-wrap { display: flex; flex-wrap: wrap; gap: 8px; }
+  .remark-item { flex: none; }
+  .remark-item > summary { list-style: none; cursor: pointer; }
+  .remark-item > summary::-webkit-details-marker { display: none; }
+  .remark-item[open] { flex-basis: 100%; background: var(--bg); border-radius: 12px; padding: 8px 10px; }
+  .remark-item .main { margin-top: 8px; }
+  .big.pos { color: var(--ok); }
+  .big.neg { color: var(--err); }
   .gc.g5 { background: var(--ok-soft); color: var(--ok); }
   .gc.g4 { background: var(--g4-soft); color: var(--g4); }
   .gc.g3 { background: var(--warn-soft); color: var(--warn); }
@@ -520,7 +532,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-24 · 23"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-09-30 · 24"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -1103,7 +1115,43 @@
     </div>`;
   }
 
+  // ---------- Zachowanie (uwagi jako bilans +/−, wzorem Ocen) ----------
+  function remarkChip(r) {
+    const cls = r.type === "pozytywna" ? "pos" : r.type === "negatywna" ? "neg" : "info";
+    const mark = r.type === "pozytywna" ? "+" : r.type === "negatywna" ? "−" : "•";
+    const title = [r.teacher, r.date && fmtDate(r.date)].filter(Boolean).join(" · ");
+    return `<i class="rc ${cls}" title="${esc(title)}">${mark}</i>`;
+  }
+
+  function remarksSection(c) {
+    // Pełna, trwała historia (patrz sync: extra.remarkList) — z łagodnym cofnięciem do
+    // krótkiej listy z ostatnich 7 dni, gdyby appka jeszcze nie miała pełnej historii
+    // (np. tuż po wgraniu tej zmiany, przed pierwszą nową synchronizacją).
+    const full = Array.isArray(c.extra?.remarkList) ? c.extra.remarkList : null;
+    const list = (full ?? arr(c.sections?.remarks)).slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+    const pos = list.filter((r) => r.type === "pozytywna").length;
+    const neg = list.filter((r) => r.type === "negatywna").length;
+    const info = list.length - pos - neg;
+    const balance = pos - neg;
+    const balTxt = balance > 0 ? `+${balance}` : String(balance);
+    const balCls = balance > 0 ? "pos" : balance < 0 ? "neg" : "";
+
+    const chips = list.map((r) => `<details class="remark-item"><summary>${remarkChip(r)}</summary>
+      <div class="main"><b>${r.type === "pozytywna" ? "Pozytywna" : r.type === "negatywna" ? "Negatywna" : "Uwaga"}</b>
+      <small>${r.teacher ? esc(r.teacher) + " · " : ""}${fmtDate(r.date)}</small>
+      <p class="sum" style="margin:4px 0 0">${esc(r.text) || "<i>Brak treści.</i>"}</p></div></details>`).join("");
+
+    return `<div class="card" id="sec-remarks">
+      <div class="avg-head"><div><h3>${icon("alert")} Zachowanie</h3><small>${pos} pozytywnych · ${neg} negatywnych${info ? ` · ${info} informacyjnych` : ""}</small></div>
+        <div style="text-align:right"><div class="big ${balCls}">${balTxt}</div><div class="delta" style="color:var(--muted)">bilans</div></div></div>
+      <div class="sub-hd">Wszystkie uwagi${full ? "" : " (ostatnie 7 dni)"}</div>
+      ${chips ? `<div class="remark-wrap">${chips}</div>` : `<p class="empty">Brak uwag.</p>`}
+      ${!full ? `<p class="empty" style="margin-top:8px">Pełna historia pojawi się po najbliższej synchronizacji.</p>` : ""}
+    </div>`;
+  }
+
   // ---------- zadania, plan lekcji, "Dziś i jutro" ----------
+
   const shiftISO = (iso, n) => {
     const [y, m, dd] = iso.split("-").map(Number);
     const t = new Date(y, m - 1, dd + n);
@@ -1796,7 +1844,7 @@
       </div>` : ""}
       ${hasSections ? `
         ${c.extra?.gradeList ? gradesSection(c) : section("star", "Oceny", s.grades.length, grades, "Brak nowych ocen z ostatnich 7 dni.", `${s.grades.length} nowe`, null, "sec-grades")}
-        ${section("alert", "Uwagi", s.remarks.length, remarks, "Brak nowych uwag z ostatnich 7 dni.", null, "remark", "sec-remarks")}
+        ${remarksSection(c)}
         ${section("calendar", "Wydarzenia", s.events.length, events, "Brak nadchodzących wydarzeń w ciągu 60 dni.", null, "event", "sec-events")}
         ${section("mail", "Wiadomości", messagesCount, messages, msgFull ? "Brak wiadomości w skrzynce." : "Brak nowych wiadomości z ostatnich 7 dni.", unread ? `${unread} nieprzeczytane` : `${messagesCount}`, "msg", "sec-messages")}
       ` : `<div class="card"><p class="empty">Szczegóły pojawią się po następnej synchronizacji.</p></div>`}
