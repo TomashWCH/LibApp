@@ -416,6 +416,9 @@
   .card.t-att { background: var(--c2-soft); border-left-color: var(--c2); }
   .card.t-wa { background: var(--ok-soft); border-left-color: var(--ok); }
   .card.t-today { background: var(--accent-soft); border-left-color: var(--accent); }
+  .pulpit-switch { margin: -2px 0 14px; background: var(--card); border-radius: 14px; padding: 4px; box-shadow: var(--shadow); }
+  .pulpit-switch button { flex: 1; padding: 9px 4px; border-radius: 10px; font-size: .85rem; font-weight: 700; }
+  .pulpit-switch button.on { background: var(--accent-soft); color: var(--accent); }
 
   /* Werdykt dnia — Pulpit. Dwa stany: spokojny (duża karta, gradient) i pilny (ciemna karta + lista). */
   .verdict-ok { position: relative; overflow: hidden; border-radius: 22px; padding: 26px 18px 22px; text-align: center; margin-bottom: 14px; color: #fff;
@@ -557,7 +560,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-01 · 25"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-01 · 26"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -622,7 +625,7 @@
 
   // ---------- stan ----------
   const now0 = new Date();
-  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", calFilter: null, push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
+  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", calFilter: null, pulpitScope: "all", push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -1668,10 +1671,11 @@
   // ---------- Werdykt dnia (Pulpit) — "czy coś dziś wymaga uwagi", nie lista sekcji ----------
   // Celowo WĄSKIE kryterium: tylko to, co naprawdę wymaga działania dziś. Dobra ocena to nie
   // alarm, więc oceny tu nie trafiają — mają swoje miejsce w kartach dzieci.
-  function buildUrgentItems(d) {
+  function buildUrgentItems(d, scopeKey) {
     const today = todayISO();
     const out = [];
-    for (const k of getChildren(d)) {
+    const kids = getChildren(d).filter((k) => scopeKey === "all" || k.key === scopeKey);
+    for (const k of kids) {
       for (const ev of allEvents(k)) {
         if (ev.date === today && examLabel(ev.title)) {
           out.push({ child: k, title: ev.title, subtitle: `dziś${ev.time ? " · " + ev.time : ""}${ev.sourceNote ? " · " + ev.sourceNote : ""}`, target: "sec-events" });
@@ -1683,7 +1687,9 @@
         }
       }
     }
+    const kidKeys = new Set(kids.map((k) => k.key));
     for (const t of todoItems(d)) {
+      if (t.k !== MANUAL_K && !kidKeys.has(t.k.key)) continue;
       if (t.due === today && !loadDone().has(t.id) && t.kind !== "hw") {
         out.push({ child: t.k === MANUAL_K ? null : t.k, title: t.text, subtitle: "termin: dziś", target: t.k === MANUAL_K ? null : "sec-events" });
       }
@@ -1691,9 +1697,17 @@
     return out;
   }
 
-  function verdictCard(d) {
+  function pulpitSwitcher(d) {
     const kids = getChildren(d);
-    const items = buildUrgentItems(d);
+    if (kids.length < 2) return "";
+    const btn = (val, label) => `<button data-pulpit-scope="${esc(val)}" class="${state.pulpitScope === val ? "on" : ""}" aria-pressed="${state.pulpitScope === val}">${label}</button>`;
+    return `<div class="seg pulpit-switch">${btn("all", "Wspólnie")}${kids.map((k) => btn(k.key, esc(k.name))).join("")}</div>`;
+  }
+
+  function verdictCard(d) {
+    const scope = getChildren(d).some((k) => k.key === state.pulpitScope) ? state.pulpitScope : "all";
+    const kids = getChildren(d).filter((k) => scope === "all" || k.key === scope);
+    const items = buildUrgentItems(d, scope);
     if (!items.length) {
       const names = kids.map((k) => esc(k.name)).join(kids.length === 2 ? " i " : ", ");
       return `<div class="verdict-ok">
@@ -1746,7 +1760,7 @@
     const today = todayISO();
     const sunday = new Date().getDay() === 0;
     const week = weekCard(d, sunday);
-    return `${searchCard(d)}${verdictCard(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    return `${searchCard(d)}${verdictCard(d)}${pulpitSwitcher(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
       ${settingsCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
@@ -2096,6 +2110,12 @@
     const calFilterBtn = e.target.closest("[data-calfilter]");
     if (calFilterBtn) {
       state.calFilter = calFilterBtn.dataset.calfilter || null;
+      render();
+      return;
+    }
+    const pulpitScopeBtn = e.target.closest("[data-pulpit-scope]");
+    if (pulpitScopeBtn) {
+      state.pulpitScope = pulpitScopeBtn.dataset.pulpitScope;
       render();
       return;
     }
