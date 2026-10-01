@@ -307,8 +307,12 @@ const MESSAGE_BODY_CONCURRENCY = 3;
 // Uwagi zawsze mają ten sam, stały temat ("Dodano uwagę dla ucznia ..."), więc rozpoznajemy je
 // po wzorcu, bez udziału AI — i pobieramy ich treść ZAWSZE, niezależnie od MESSAGE_BODY_LIMIT
 // i od tego, czy są przeczytane, żeby żadna uwaga nigdy nie wypadła z appki.
-const REMARK_TITLE_PREFIX = "Dodano uwagę dla ucznia";
-const isRemarkTitle = (title) => String(title ?? "").trim().startsWith(REMARK_TITLE_PREFIX);
+const REMARK_TITLE_PREFIX = "dodano uwagę dla ucznia";
+// Normalizacja: zamienia twarde/niełamliwe spacje i wielokrotne odstępy na zwykłą spację,
+// małe litery — żeby drobna różnica w białych znakach albo wielkości liter (np. z kopiowania
+// przez Librusa) nie psuła dopasowania tak, jak się to okazało 1 października.
+const normTitle = (s) => String(s ?? "").replace(/[\s\u00A0]+/g, " ").trim().toLowerCase();
+const isRemarkTitle = (title) => normTitle(title).includes(REMARK_TITLE_PREFIX);
 
 // ---------- Załączniki PDF: pobranie i streszczenie przez Gemini (z pamięcią wyników) ----------
 const PDF_NEW_LIMIT = 3; // ile NOWYCH załączników max analizujemy w jednej synchronizacji (biblioteka do Librusa bywa tu wolna/kapryśna)
@@ -908,6 +912,11 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     absence: buildAbsenceSummary(absenceGroups),
   };
   console.log(`  wiadomości: w skrzynce ${wiadomosciZrodlo.length}, pobrano pełną treść: ${messageBodies.length} (w tym uwag: ${remarkList.length})`);
+  // --- TYMCZASOWA DIAGNOSTYKA (usunąć, gdy rozpoznawanie uwag będzie potwierdzone jako poprawne) ---
+  // Surowe tematy pierwszych kilku wiadomości w skrzynce — żeby zobaczyć dokładnie, jak Librus
+  // naprawdę formatuje temat uwagi, zamiast zgadywać.
+  console.log(`  [diagnostyka tematów] ${wiadomosciZrodlo.slice(0, 6).map((m) => JSON.stringify(m.title)).join(" | ")}`);
+  // --- KONIEC TYMCZASOWEJ DIAGNOSTYKI ---
   // Diagnostyka bez nazw i treści: ile ocen znalazła biblioteka, ile wszystkie pola i jakie wartości nie są cyframi.
   const letters = {};
   for (const g of extra.gradeList) if (g.base == null) letters[g.value] = (letters[g.value] || 0) + 1;
