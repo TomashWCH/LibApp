@@ -13,6 +13,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import Librus from "librus-api";
 import admin from "firebase-admin";
 import fetch from "node-fetch";
@@ -132,6 +133,14 @@ function normalizeAi(obj) {
         date: nul(r.date),
         type: nul(r.type),
       })),
+      // Pełna historia uwag (bez ograniczenia do "since") — osobne pole, żeby nie zmieniać
+      // znaczenia "remarks" używanego gdzie indziej jako "nowe z ostatnich 7 dni".
+      remarksAll: asArray(o.remarksAll).map((r) => ({
+        text: str(r.text),
+        teacher: str(r.teacher),
+        date: nul(r.date),
+        type: nul(r.type),
+      })),
       events: asArray(o.events)
         .map((e) => ({
           title: str(e.title),
@@ -170,6 +179,10 @@ Z poniższych danych JSON przygotuj obiekt z polami:
    [{"text": string, "teacher": string, "date": "YYYY-MM-DD" albo null,
    "type": "negatywna" | "pozytywna" | "informacja" | null}].
    Tekst strony zawiera też menu i inne elementy — ignoruj je.
+
+3b. "remarksAll" — DOKŁADNIE to samo co punkt 3, ale bez ograniczenia do "${since}":
+    zgłoś WSZYSTKIE uwagi, jakie znajdziesz w tekście strony "uwagi_tekst",
+    niezależnie od daty. Ten sam kształt obiektów co w punkcie 3.
 
 4. "events" — nadchodzące wydarzenia od dziś do ${EVENTS_AHEAD_DAYS} dni w przód
    z terminarza i ogłoszeń (sprawdziany, wycieczki, wywiadówki, terminy oddania):
@@ -255,16 +268,6 @@ function safeMonthsAhead(now, count) {
 // ---------- Plan lekcji, zadania domowe, szczęśliwy numerek (bez Gemini — parsowanie wprost) ----------
 const cleanText = (v, max = 120) => String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 
-// Rozpoznaje typ uwagi po słowach, których Librus sam używa w treści wiadomości
-// (ten sam słownik, którego wcześniej używał prompt do Gemini dla tego konta — już
-// sprawdzony na prawdziwych danych, więc nie zgaduję na ślepo).
-function classifyRemarkType(text) {
-  const t = String(text ?? "").toLowerCase();
-  if (/negatywn/.test(t)) return "negatywna";
-  if (/pozytywn/.test(t)) return "pozytywna";
-  if (/informacyjn|neutraln/.test(t)) return "informacja";
-  return null;
-}
 const DAY_KEYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 function addDaysISO(iso, n) {
@@ -304,20 +307,12 @@ function parseTimetable(res, mondayISO) {
 // ---------- Pełna treść wiadomości (żeby czytać je w appce, bez przełączania do Librusa) ----------
 const MESSAGE_BODY_LIMIT = 20; // ile wiadomości max pobieramy w jednej synchronizacji (nieprzeczytane najpierw)
 const MESSAGE_BODY_CONCURRENCY = 3;
-// Uwagi zawsze mają ten sam, stały temat ("Dodano uwagę dla ucznia ..."), więc rozpoznajemy je
-// po wzorcu, bez udziału AI — i pobieramy ich treść ZAWSZE, niezależnie od MESSAGE_BODY_LIMIT
-// i od tego, czy są przeczytane, żeby żadna uwaga nigdy nie wypadła z appki.
-const REMARK_TITLE_PREFIX = "dodano uwagę dla ucznia";
-// Normalizacja: zamienia twarde/niełamliwe spacje i wielokrotne odstępy na zwykłą spację,
-// małe litery — żeby drobna różnica w białych znakach albo wielkości liter (np. z kopiowania
-// przez Librusa) nie psuła dopasowania tak, jak się to okazało 1 października.
-const normTitle = (s) => String(s ?? "").replace(/[\s\u00A0]+/g, " ").trim().toLowerCase();
-const isRemarkTitle = (title) => normTitle(title).includes(REMARK_TITLE_PREFIX);
 
 // ---------- Załączniki PDF: pobranie i streszczenie przez Gemini (z pamięcią wyników) ----------
 const PDF_NEW_LIMIT = 3; // ile NOWYCH załączników max analizujemy w jednej synchronizacji (biblioteka do Librusa bywa tu wolna/kapryśna)
 const PDF_MAX_BYTES = 15 * 1024 * 1024; // limit wielkości pliku wysyłanego do Gemini
 const PDF_TIMEOUT_MS = 25000; // twardy limit czasu na pobranie JEDNEGO załącznika — nie blokujemy reszty synchronizacji
+
 
 function withTimeout(promise, ms, label) {
   let timer;
@@ -410,14 +405,10 @@ Odpowiedz WYŁĄCZNIE poprawnym JSON-em z dokładnie tymi czterema polami.
 // attachmentCache: Map "messageId:nazwaPliku" -> wcześniej policzona analiza PDF (żeby nie
 // płacić za to samo dwa razy przy każdej synchronizacji).
 async function fetchMessageBodies(client, wiadomosciZrodlo, attachmentCache = new Map()) {
-  const withId = wiadomosciZrodlo.filter((m) => Number.isFinite(m.id));
-  const remarks = withId.filter((m) => isRemarkTitle(m.title));
-  const rest = withId
-    .filter((m) => !isRemarkTitle(m.title))
+  const candidates = wiadomosciZrodlo
+    .filter((m) => Number.isFinite(m.id))
     .sort((a, b) => Number(!!a.read) - Number(!!b.read)) // nieprzeczytane (read: false) najpierw
     .slice(0, MESSAGE_BODY_LIMIT);
-  // Uwagi zawsze na liście (nie wliczają się do MESSAGE_BODY_LIMIT), reszta jak dotychczas.
-  const candidates = [...remarks, ...rest];
 
   const out = [];
   let i = 0;
@@ -885,21 +876,6 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
 
   const messageBodies = await fetchMessageBodies(client, wiadomosciZrodlo, attachmentCache);
 
-  // Uwagi wyłowione z wiadomości po stałym wzorcu tematu (patrz REMARK_TITLE_PREFIX) — bez
-  // udziału AI, więc nie zależy od tego, czy Gemini akurat "zauważy" uwagę w danym oknie czasu.
-  // "id" wiadomości jest stabilnym kluczem do bazy: ta sama uwaga nigdy nie zduplikuje się
-  // przy kolejnych synchronizacjach, a merge z poprzednim stanem (w index.js) dba o to, żeby
-  // raz znaleziona uwaga już nigdy nie zniknęła, nawet jeśli wypadnie poza to, co Librus pokazuje.
-  const remarkList = messageBodies
-    .filter((m) => isRemarkTitle(m.temat))
-    .map((m) => ({
-      id: m.id,
-      date: normalizeDay(m.data) || null,
-      teacher: cleanText(String(m.od || "").replace(/\s*\[Nauczyciel\]\s*$/i, ""), 80),
-      text: cleanText(m.tresc, 1000),
-      type: classifyRemarkType(m.tresc),
-    }));
-
   const extra = {
     timetable: asArray(timetableWeeks)
       .flat()
@@ -908,15 +884,9 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     luckyNumber: Number.isFinite(lucky) ? lucky : null,
     gradeList: buildGradeList(subjects, gradeBoxes),
     messages: messageBodies,
-    remarkList,
     absence: buildAbsenceSummary(absenceGroups),
   };
-  console.log(`  wiadomości: w skrzynce ${wiadomosciZrodlo.length}, pobrano pełną treść: ${messageBodies.length} (w tym uwag: ${remarkList.length})`);
-  // --- TYMCZASOWA DIAGNOSTYKA (usunąć, gdy rozpoznawanie uwag będzie potwierdzone jako poprawne) ---
-  // Surowe tematy pierwszych kilku wiadomości w skrzynce — żeby zobaczyć dokładnie, jak Librus
-  // naprawdę formatuje temat uwagi, zamiast zgadywać.
-  console.log(`  [diagnostyka tematów] ${wiadomosciZrodlo.slice(0, 6).map((m) => JSON.stringify(m.title)).join(" | ")}`);
-  // --- KONIEC TYMCZASOWEJ DIAGNOSTYKI ---
+  console.log(`  wiadomości: w skrzynce ${wiadomosciZrodlo.length}, pobrano pełną treść: ${messageBodies.length}`);
   // Diagnostyka bez nazw i treści: ile ocen znalazła biblioteka, ile wszystkie pola i jakie wartości nie są cyframi.
   const letters = {};
   for (const g of extra.gradeList) if (g.base == null) letters[g.value] = (letters[g.value] || 0) + 1;
@@ -945,16 +915,8 @@ async function syncChild(child, attachmentCache, previousRemarks = []) {
   console.log(`[${child.name}] Logowanie do Librusa i pobieranie danych...`);
   const raw = await fetchLibrusData(login, password, today, since, until, attachmentCache);
 
-  // Scalenie: nowo znalezione uwagi + te z poprzednich synchronizacji, po id wiadomości
-  // (stabilny, unikalny klucz) — nowsza wersja (jeśli ta sama uwaga pojawiła się w obu)
-  // wygrywa, ale żadna raz zauważona uwaga nie ginie.
-  const mergedRemarks = new Map();
-  for (const r of previousRemarks) if (r?.id != null) mergedRemarks.set(r.id, r);
-  for (const r of raw.extra.remarkList) if (r?.id != null) mergedRemarks.set(r.id, r);
-  raw.extra.remarkList = [...mergedRemarks.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
-
   console.log(
-    `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"}), uwagi łącznie: ${raw.extra.remarkList.length}`
+    `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"})`
   );
   const gradeTrends = computeGradeTrends(raw.extra.gradeList, today);
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
@@ -971,6 +933,22 @@ async function syncChild(child, attachmentCache, previousRemarks = []) {
     since,
     gradeTrends
   );
+
+  // Pełna historia uwag: Gemini zgłasza WSZYSTKIE znalezione na stronie "uwagi_tekst" (punkt 3b
+  // w promptcie, bez ograniczenia do "since"). Brak naturalnego id (to nie wiadomość z własnym
+  // numerem), więc budujemy stabilny klucz z treści — ta sama uwaga da ten sam klucz przy
+  // każdej synchronizacji, więc scalanie z poprzednim stanem nie zduplikuje wpisów.
+  const remarkKey = (r) => createHash("md5").update(`${r.date || ""}|${r.teacher || ""}|${r.text || ""}`).digest("hex").slice(0, 16);
+  const mergedRemarks = new Map();
+  for (const r of previousRemarks) if (r?.id != null) mergedRemarks.set(r.id, r);
+  for (const r of ai.sections.remarksAll) {
+    const id = remarkKey(r);
+    mergedRemarks.set(id, { id, date: r.date, teacher: r.teacher, text: r.text, type: r.type });
+  }
+  raw.extra.remarkList = [...mergedRemarks.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  console.log(`[${child.name}] uwagi: nowo zgłoszone przez Gemini ${ai.sections.remarksAll.length}, łącznie po scaleniu ${raw.extra.remarkList.length}`);
+  delete ai.sections.remarksAll; // już przeniesione do extra.remarkList — nie dublujemy w bazie
+
   return { ...ai, extra: raw.extra };
 }
 
