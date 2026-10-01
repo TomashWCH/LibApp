@@ -398,6 +398,8 @@
   }
   .hero-in { max-width: 640px; margin: 0 auto; padding: 0 18px; }
   .hero-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .hero-right { display: flex; align-items: center; gap: 12px; }
+  .profile-btn { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.2); border: 1.5px solid rgba(255,255,255,.5); color: #fff; font-weight: 800; font-size: .85rem; flex: none; }
   header.hero h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
   .hero-date { font-size: 0.85rem; opacity: 0.9; }
   .hero .sync-status { color: rgba(255, 255, 255, 0.92); margin-top: 8px; font-size: 0.8rem; background: rgba(255, 255, 255, 0.14); border-radius: 999px; padding: 4px 12px; display: inline-flex; }
@@ -419,6 +421,13 @@
   .pulpit-switch { margin: -2px 0 14px; background: var(--card); border-radius: 14px; padding: 4px; box-shadow: var(--shadow); }
   .pulpit-switch button { flex: 1; padding: 9px 4px; border-radius: 10px; font-size: .85rem; font-weight: 700; }
   .pulpit-switch button.on { background: var(--accent-soft); color: var(--accent); }
+
+  body.profile-open { overflow: hidden; }
+  .overlay-scrim { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50; animation: fadein .15s ease; }
+  .overlay-sheet { position: fixed; left: 0; right: 0; bottom: 0; max-height: 85vh; overflow-y: auto; background: var(--bg); border-radius: 22px 22px 0 0; padding: 10px 16px calc(20px + env(safe-area-inset-bottom, 0px)); z-index: 51; box-shadow: 0 -8px 24px rgba(0,0,0,.2); animation: sheetup .18s ease; }
+  .overlay-handle { width: 36px; height: 4px; background: var(--line); border-radius: 999px; margin: 6px auto 14px; }
+  @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes sheetup { from { transform: translateY(16px); opacity: .6; } to { transform: translateY(0); opacity: 1; } }
 
   /* Werdykt dnia — Pulpit. Dwa stany: spokojny (duża karta, gradient) i pilny (ciemna karta + lista). */
   .verdict-ok { position: relative; overflow: hidden; border-radius: 22px; padding: 26px 18px 22px; text-align: center; margin-bottom: 14px; color: #fff;
@@ -524,7 +533,10 @@
     <div class="hero-in">
       <div class="hero-top">
         <h1 id="greeting">Cześć!</h1>
-        <div class="hero-date" id="hero-date"></div>
+        <div class="hero-right">
+          <div class="hero-date" id="hero-date"></div>
+          <button id="profile-btn" class="profile-btn" aria-label="Profil i ustawienia"><span id="profile-initial"></span></button>
+        </div>
       </div>
       <div class="sync-status">
         <span class="dot pending" id="sync-dot"></span>
@@ -560,7 +572,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-01 · 26"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-01 · 27"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -625,7 +637,7 @@
 
   // ---------- stan ----------
   const now0 = new Date();
-  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", calFilter: null, pulpitScope: "all", push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
+  const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", calFilter: null, pulpitScope: "all", profileOpen: false, push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -774,6 +786,18 @@
       <p class="empty" style="margin:8px 0 0">Przeszukuje już zsynchronizowane dane: oceny, uwagi, wydarzenia, wiadomości i podsumowania WhatsAppa. Nie rozumie pytań, tylko dopasowuje słowa.</p>
       ${renderSearchResults(results, q)}
     </details>`;
+  }
+
+  // ---------- Nakładka profilu (WhatsApp, Ustawienia, Wyloguj) — nad każdym widokiem ----------
+  function profileOverlay(d) {
+    if (!state.profileOpen) return "";
+    return `<div class="overlay-scrim" data-profile-close></div>
+      <div class="overlay-sheet" role="dialog" aria-label="Profil i ustawienia">
+        <div class="overlay-handle"></div>
+        ${whatsappCard(d)}
+        ${settingsCard(d)}
+        <button id="logout-btn" class="btn btn-quiet" style="width:100%;margin-top:4px">Wyloguj</button>
+      </div>`;
   }
 
   function whatsappCard(d) {
@@ -1760,11 +1784,11 @@
     const today = todayISO();
     const sunday = new Date().getDay() === 0;
     const week = weekCard(d, sunday);
-    return `${searchCard(d)}${verdictCard(d)}${pulpitSwitcher(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
-      ${whatsappCard(d)}
-      ${settingsCard(d)}
-      <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
-      <p class="empty" style="text-align:center;font-size:0.75rem">Wersja z ${BUILD_DISPLAY}</p>`;
+    const doneNow = loadDone();
+    const dueCount = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due <= today).length;
+    const allTasksCard = `<details class="card t-hw"><summary>${icon("check")} Zadania${dueCount ? ` <span class="sub">· ${dueCount} na dziś lub po terminie</span>` : ""}</summary>${viewTodo(d)}</details>`;
+    return `${searchCard(d)}${verdictCard(d)}${pulpitSwitcher(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}${allTasksCard}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+      <p class="empty" style="text-align:center;font-size:0.75rem;margin-top:16px">Wersja z ${BUILD_DISPLAY}</p>`;
   }
 
   function section(iconName, title, count, body, emptyText, badgeText, tint, id) {
@@ -1930,14 +1954,12 @@
     const kids = getChildren(d);
     if (!["pulpit", "kalendarz", "todo"].includes(state.view) && !kids.some((k) => k.key === state.view)) state.view = "pulpit";
     registry.clear();
-    $("#content").innerHTML = state.view === "pulpit" ? viewPulpit(d) : state.view === "kalendarz" ? viewKalendarz(d) : state.view === "todo" ? viewTodo(d) : viewChild(d, state.view);
-    const doneNow = loadDone();
-    const dueNow = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due <= todayISO()).length;
+    $("#content").innerHTML = (state.view === "pulpit" ? viewPulpit(d) : state.view === "kalendarz" ? viewKalendarz(d) : state.view === "todo" ? viewTodo(d) : viewChild(d, state.view)) + profileOverlay(d);
+    document.body.classList.toggle("profile-open", state.profileOpen);
 
     $("#nav").innerHTML = `
-      <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("home")}</span>Pulpit</button>
+      <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("home")}</span>Dziś</button>
       <button data-goto="kalendarz" ${state.view === "kalendarz" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("calendar")}</span>Kalendarz</button>
-      <button data-goto="todo" ${state.view === "todo" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("check")}</span>Do zrobienia${dueNow ? `<span class="nb" aria-label="${dueNow} na dziś lub po terminie">${dueNow}</span>` : ""}</button>
       ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${esc((k.name || "?").charAt(0).toUpperCase())}</span>${esc(k.name)}</button>`).join("")}`;
 
     $("#hero-date").textContent = new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
@@ -2039,8 +2061,10 @@
     if (e.key === "Enter" && e.target.id === "search-input") { e.preventDefault(); runSearch(); }
   });
   document.addEventListener("click", (e) => {
+    if (e.target.closest("#profile-btn")) { state.profileOpen = true; render(); return; }
+    if (e.target.closest("[data-profile-close]")) { state.profileOpen = false; render(); return; }
     const goto = e.target.closest("[data-goto]");
-    if (goto) { state.view = goto.dataset.goto; render(); window.scrollTo(0, 0); return; }
+    if (goto) { state.view = goto.dataset.goto; state.profileOpen = false; render(); window.scrollTo(0, 0); return; }
     const gotoScroll = e.target.closest("[data-goto-scroll]");
     if (gotoScroll) {
       const [childKey, secId] = gotoScroll.dataset.gotoScroll.split("|");
@@ -2148,6 +2172,7 @@
       $("#login-screen").style.display = "none";
       $("#app-screen").style.display = "block";
       $("#greeting").textContent = `Cześć, ${user.displayName?.split(" ")[0] || ""}!`;
+      $("#profile-initial").textContent = (user.displayName?.split(" ")[0] || "?").charAt(0).toUpperCase();
       // user.uid musi być wpisany do scripts/users.config.json (firestoreUid)
       unsubscribe = onSnapshot(doc(db, "users", OWNER_UID), (snap) => { state.data = snap.data() || null; render(); },
         (err) => { $("#sync-dot").className = "dot error"; $("#sync-text").textContent = "Brak dostępu do danych. Spróbuj się wylogować i zalogować ponownie."; console.error("Firestore:", err); });
