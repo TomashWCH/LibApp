@@ -416,6 +416,31 @@
   .card.t-att { background: var(--c2-soft); border-left-color: var(--c2); }
   .card.t-wa { background: var(--ok-soft); border-left-color: var(--ok); }
   .card.t-today { background: var(--accent-soft); border-left-color: var(--accent); }
+
+  /* Werdykt dnia — Pulpit. Dwa stany: spokojny (duża karta, gradient) i pilny (ciemna karta + lista). */
+  .verdict-ok { position: relative; overflow: hidden; border-radius: 22px; padding: 26px 18px 22px; text-align: center; margin-bottom: 14px; color: #fff;
+    background: radial-gradient(120% 140% at 15% 0%, #22c98f 0%, #0f9e7a 38%, #0b6a5f 100%);
+    box-shadow: 0 14px 28px -10px rgba(11,106,95,.4); }
+  .verdict-ok::before { content: ""; position: absolute; width: 160px; height: 160px; border-radius: 50%; background: rgba(255,255,255,.12); top: -70px; right: -40px; }
+  .verdict-ok .v-ring { position: relative; width: 56px; height: 56px; margin: 0 auto 10px; border-radius: 50%; background: rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; }
+  .verdict-ok .v-ring .ic { width: 28px; height: 28px; }
+  .verdict-ok h2 { position: relative; font-size: 1.2rem; margin: 0 0 4px; }
+  .verdict-ok p { position: relative; margin: 0 auto; font-size: .86rem; opacity: .92; max-width: 280px; }
+
+  .verdict-urgent { position: relative; overflow: hidden; border-radius: 22px; padding: 18px 16px 8px; margin-bottom: 14px; color: #fff;
+    background: linear-gradient(155deg, #2a1220 0%, #4a1523 45%, #6e1a26 100%);
+    box-shadow: 0 14px 28px -10px rgba(110,26,38,.45); }
+  .v-head { position: relative; display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .v-badge { width: 34px; height: 34px; border-radius: 10px; background: linear-gradient(135deg,#ff6b6b,#e0334f); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.05rem; box-shadow: 0 6px 16px rgba(224,51,79,.5); flex: none; }
+  .v-head h2 { font-size: 1.05rem; margin: 0; line-height: 1.25; }
+  .v-head small { display: block; opacity: .72; font-size: .78rem; font-weight: 500; margin-top: 1px; }
+  .u-row { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 10px; margin-bottom: 8px; border-radius: 16px; background: rgba(255,255,255,.06); cursor: pointer; }
+  .u-ring { width: 32px; height: 32px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .78rem; background: conic-gradient(from 220deg, #ff8a8a, #ff5757 60%, #e0334f); color: #fff; }
+  .u-row .main { flex: 1; min-width: 0; }
+  .u-row .main b { display: block; font-size: .92rem; }
+  .u-row .main small { opacity: .75; font-size: .78rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .u-row .chev { opacity: .6; flex: none; }
+  .u-row .chev .ic { width: 16px; height: 16px; }
   .card.t-tomorrow { background: var(--tomorrow-soft); border-left-color: var(--tomorrow); }
   .card.t-week { background: var(--plan-soft); border-left-color: var(--plan); }
   .card.t-more { background: var(--c2-soft); border-left-color: var(--c2); }
@@ -532,7 +557,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-09-30 · 24"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-01 · 25"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -1640,23 +1665,56 @@
 
   // Mały "dashboard dnia" na Pulpicie — tylko dzisiejsze wpisy, osobno dla każdego dziecka.
   // Klik w ikonę przenosi do karty dziecka i przewija do właściwej sekcji.
-  function todayDashboard(k) {
+  // ---------- Werdykt dnia (Pulpit) — "czy coś dziś wymaga uwagi", nie lista sekcji ----------
+  // Celowo WĄSKIE kryterium: tylko to, co naprawdę wymaga działania dziś. Dobra ocena to nie
+  // alarm, więc oceny tu nie trafiają — mają swoje miejsce w kartach dzieci.
+  function buildUrgentItems(d) {
     const today = todayISO();
-    const gradesToday = gradesOf(k).filter((g) => g.date === today && !g.final).length;
-    const remarksToday = arr(k.sections?.remarks).filter((r) => r.date === today).length;
-    const msgsToday = (Array.isArray(k.extra?.messages) ? k.extra.messages : arr(k.sections?.messages))
-      .filter((m) => (m.data || m.date) === today).length;
-    const eventsToday = allEvents(k).filter((ev) => ev.date === today).length;
-    const items = [
-      { id: "sec-grades", icon: "star", label: "Oceny", n: gradesToday },
-      { id: "sec-remarks", icon: "alert", label: "Uwagi", n: remarksToday },
-      { id: "sec-messages", icon: "mail", label: "Wiadomości", n: msgsToday },
-      { id: "sec-events", icon: "calendar", label: "Ważne", n: eventsToday },
-    ];
-    return `<div class="card daydash c${k.idx}"><div class="sect-title"><h3><span class="tag c${k.idx}">${esc(k.name)}</span> dziś</h3></div>
-      <div class="shortcuts-grid">${items.map((it) => `
-        <button class="short-btn" data-goto-scroll="${esc(k.key)}|${it.id}">${icon(it.icon)}<span class="lbl">${esc(it.label)}</span>${it.n > 0 ? `<span class="n">${it.n > 99 ? "99+" : it.n}</span>` : ""}</button>`).join("")}
-      </div></div>`;
+    const out = [];
+    for (const k of getChildren(d)) {
+      for (const ev of allEvents(k)) {
+        if (ev.date === today && examLabel(ev.title)) {
+          out.push({ child: k, title: ev.title, subtitle: `dziś${ev.time ? " · " + ev.time : ""}${ev.sourceNote ? " · " + ev.sourceNote : ""}`, target: "sec-events" });
+        }
+      }
+      for (const r of arr(k.extra?.remarkList).length ? k.extra.remarkList : arr(k.sections?.remarks)) {
+        if (r.date === today && r.type === "negatywna") {
+          out.push({ child: k, title: "Negatywna uwaga", subtitle: `${r.teacher ? r.teacher + " · " : ""}${r.text || ""}`.trim(), target: "sec-remarks" });
+        }
+      }
+    }
+    for (const t of todoItems(d)) {
+      if (t.due === today && !loadDone().has(t.id) && t.kind !== "hw") {
+        out.push({ child: t.k === MANUAL_K ? null : t.k, title: t.text, subtitle: "termin: dziś", target: t.k === MANUAL_K ? null : "sec-events" });
+      }
+    }
+    return out;
+  }
+
+  function verdictCard(d) {
+    const kids = getChildren(d);
+    const items = buildUrgentItems(d);
+    if (!items.length) {
+      const names = kids.map((k) => esc(k.name)).join(kids.length === 2 ? " i " : ", ");
+      return `<div class="verdict-ok">
+        <div class="v-ring">${icon("check")}</div>
+        <h2>Dziś wszystko spokojnie</h2>
+        <p>${kids.length ? `${names} nie ${kids.length === 1 ? "ma" : "mają"} dziś pilnych spraw.` : "Brak danych."}</p>
+      </div>`;
+    }
+    const rows = items.map((it) => {
+      const initials = it.child ? esc((it.child.name || "?").charAt(0).toUpperCase()) : "·";
+      const goto = it.child && it.target ? ` data-goto-scroll="${esc(it.child.key)}|${it.target}"` : "";
+      return `<div class="u-row"${goto ? ` tabindex="0" role="button"${goto}` : ""}>
+        <span class="u-ring">${initials}</span>
+        <div class="main"><b>${esc(it.title)}</b>${it.subtitle ? `<small>${esc(it.subtitle)}</small>` : ""}</div>
+        ${goto ? `<span class="chev" aria-hidden="true">${icon("chevron")}</span>` : ""}
+      </div>`;
+    }).join("");
+    return `<div class="verdict-urgent">
+      <div class="v-head"><span class="v-badge">${items.length}</span><div><h2>Wymaga Twojej uwagi</h2><small>zebrane ${kids.length > 1 ? "z obu dzieci " : ""}na dziś</small></div></div>
+      ${rows}
+    </div>`;
   }
 
   function viewPulpit(d) {
@@ -1688,8 +1746,7 @@
     const today = todayISO();
     const sunday = new Date().getDay() === 0;
     const week = weekCard(d, sunday);
-    const dashboards = `<h2 class="sec">Dziś w skrócie</h2>${all.map(({ k }) => todayDashboard(k)).join("")}`;
-    return `${searchCard(d)}${dashboards}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    return `${searchCard(d)}${verdictCard(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       ${whatsappCard(d)}
       ${settingsCard(d)}
       <button id="logout-btn" class="btn btn-quiet">Wyloguj</button>
