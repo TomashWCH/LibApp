@@ -119,7 +119,9 @@
   .tile-head .chev { color: var(--muted); font-size: 1.3rem; }
   .avatar {
     width: 34px; height: 34px; border-radius: 50%; flex: none;
-    background: var(--ch-soft); color: var(--ch); font-weight: 700;
+    background: linear-gradient(135deg, var(--ch-soft) 0%, var(--ch) 65%);
+    box-shadow: 0 0 0 2.5px var(--ch-soft);
+    color: #fff; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,.18);
     display: inline-flex; align-items: center; justify-content: center;
   }
   .sum { white-space: pre-line; color: var(--ink); margin-top: 10px; font-size: 0.95rem; }
@@ -149,6 +151,7 @@
   .read { width: 8px; height: 8px; border-radius: 50%; background: transparent; border: 1px solid var(--line); flex: none; }
   .tag { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--ch-soft); color: var(--ch); margin-right: 6px; }
   .add { background: transparent; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 6px 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .daysleft { flex: none; background: var(--accent-soft); color: var(--accent); font-size: 0.72rem; font-weight: 800; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
   .add:disabled { opacity: 0.6; cursor: default; }
   .added { color: var(--ok); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
@@ -247,6 +250,17 @@
   .short-btn .ic { width: 22px; height: 22px; color: var(--ch, var(--accent)); }
   .short-btn .lbl { font-size: 0.72rem; font-weight: 600; text-align: center; line-height: 1.15; }
   .short-btn .n { position: absolute; top: 4px; right: 10px; background: var(--err); color: #fff; font-size: 0.62rem; font-weight: 700; min-width: 16px; height: 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .sc-ic { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+  .sc-ic .ic { width: 19px; height: 19px; color: inherit; }
+  .sc-ic.sc-grades { background: var(--accent-soft); color: var(--accent); }
+  .sc-ic.sc-remarks { background: var(--warn-soft); color: var(--warn); }
+  .sc-ic.sc-events { background: var(--g4-soft); color: var(--g4); }
+  .sc-ic.sc-messages { background: var(--msg-soft); color: var(--msg); }
+  .sc-ic.sc-homework { background: var(--hw-soft); color: var(--hw); }
+  .sc-ic.sc-plan { background: var(--plan-soft); color: var(--plan); }
+  .sc-ic.sc-attendance { background: var(--c2-soft); color: var(--c2); }
+  .sc-ic.sc-whatsapp { background: var(--ok-soft); color: var(--ok); }
+  .sc-ic.sc-calendar { background: var(--line); color: var(--muted); }
 
   .seg button { background: transparent; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; font-size: 0.8rem; cursor: pointer; color: var(--muted); }
   .seg button.on { background: var(--ch-soft); color: var(--ch); border-color: transparent; font-weight: 700; }
@@ -285,7 +299,7 @@
   }
   nav button[aria-current="page"] { color: var(--ink); font-weight: 700; }
   nav .ico { width: 28px; height: 28px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 1.05rem; background: transparent; }
-  nav .ico.av { background: var(--ch-soft); color: var(--ch); font-weight: 700; font-size: 0.9rem; }
+  nav .ico.av { background: linear-gradient(135deg, var(--ch-soft) 0%, var(--ch) 65%); box-shadow: 0 0 0 2px var(--ch-soft); color: #fff; font-weight: 700; font-size: 0.9rem; text-shadow: 0 1px 2px rgba(0,0,0,.18); }
   nav button[aria-current="page"] .ico { box-shadow: 0 0 0 2px var(--ch, var(--accent)); }
 
   #toast {
@@ -399,7 +413,9 @@
   .hero-in { max-width: 640px; margin: 0 auto; padding: 0 18px; }
   .hero-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   .hero-right { display: flex; align-items: center; gap: 12px; }
-  .profile-btn { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.2); border: 1.5px solid rgba(255,255,255,.5); color: #fff; font-weight: 800; font-size: .85rem; flex: none; }
+  .profile-btn { width: 36px; height: 36px; border-radius: 50%; background: rgba(255,255,255,.2); border: 1.5px solid rgba(255,255,255,.5); color: #fff; font-weight: 800; font-size: .85rem; flex: none; position: relative; display: flex; align-items: center; justify-content: center; }
+  .profile-btn .ic { width: 18px; height: 18px; }
+  .bell-badge { position: absolute; top: -2px; right: -2px; min-width: 16px; height: 16px; border-radius: 999px; background: var(--err); color: #fff; font-size: .62rem; font-weight: 800; display: flex; align-items: center; justify-content: center; padding: 0 3px; border: 1.5px solid var(--accent); }
   header.hero h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; }
   .hero-date { font-size: 0.85rem; opacity: 0.9; }
   .hero .sync-status { color: rgba(255, 255, 255, 0.92); margin-top: 8px; font-size: 0.8rem; background: rgba(255, 255, 255, 0.14); border-radius: 999px; padding: 4px 12px; display: inline-flex; }
@@ -551,6 +567,7 @@
         <h1 id="greeting">Cześć!</h1>
         <div class="hero-right">
           <div class="hero-date" id="hero-date"></div>
+          <button id="bell-btn" class="profile-btn" aria-label="Pilne sprawy na dziś"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 8 2.5 8h-17S6 15 6 9z"/><path d="M10.2 20.5a2 2 0 0 0 3.6 0"/></svg><span id="bell-badge" class="bell-badge" hidden></span></button>
           <button id="profile-btn" class="profile-btn" aria-label="Profil i ustawienia"><span id="profile-initial"></span></button>
         </div>
       </div>
@@ -588,7 +605,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-01 · 29"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-01 · 31"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -698,13 +715,27 @@
   // ---------- widoki ----------
   const examLabel = (title) => (/kartk/i.test(title || "") ? "kartkówka" : /sprawdzian|klasówk|\btest\b|egzamin|dyktando/i.test(title || "") ? "sprawdzian" : "");
 
+  // "za N dni" / "jutro" / "dziś" — odliczanie, pomysł z referencyjnego designu.
+  function daysLabel(iso) {
+    if (!isoDate.test(iso || "")) return "";
+    const diff = Math.round((new Date(iso + "T00:00:00") - new Date(todayISO() + "T00:00:00")) / 86400000);
+    if (diff === 0) return "dziś";
+    if (diff === 1) return "jutro";
+    if (diff > 1) return `za ${diff} dni`;
+    if (diff === -1) return "wczoraj";
+    if (diff < -1) return `${Math.abs(diff)} dni temu`;
+    return "";
+  }
+
   function eventRow(ev, child, showTag) {
     const key = `${child.key}|${ev.title}|${ev.date}|${ev.time || ""}`;
     const id = "lib" + cyrb53(key).toString(32);
     registry.set(id, { ev, childKey: child.key, childName: child.name });
     const added = loadAdded().has(id);
     const canAdd = isoDate.test(ev.date || "");
+    const dl = daysLabel(ev.date);
     return `<li>
+      ${dl ? `<span class="daysleft">${esc(dl)}</span>` : ""}
       <div class="main">
         <b>${esc(ev.title)}${examLabel(ev.title) ? ` <span class="chip neg">${examLabel(ev.title)}</span>` : ""}</b>
         <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${ev.sourceNote && ev.sourceNote.length <= 40 ? " · " + esc(ev.sourceNote) : ""}</small>
@@ -1903,20 +1934,20 @@
   // Pasek skrótów na górze karty dziecka — jeden klik przewija do właściwej sekcji niżej.
   function shortcutsBar(c, s, extraCounts) {
     const items = [
-      { id: "sec-grades", icon: "star", label: "Oceny", n: extraCounts.grades },
-      { id: "sec-remarks", icon: "alert", label: "Uwagi", n: extraCounts.remarks },
-      { id: "sec-events", icon: "calendar", label: "Wydarzenia", n: extraCounts.events },
-      { id: "sec-messages", icon: "mail", label: "Wiadomości", n: extraCounts.messages },
-      { id: "sec-homework", icon: "book", label: "Zadania", n: extraCounts.homework },
+      { id: "sec-grades", icon: "star", label: "Oceny", n: extraCounts.grades, cls: "sc-grades" },
+      { id: "sec-remarks", icon: "alert", label: "Uwagi", n: extraCounts.remarks, cls: "sc-remarks" },
+      { id: "sec-events", icon: "calendar", label: "Wydarzenia", n: extraCounts.events, cls: "sc-events" },
+      { id: "sec-messages", icon: "mail", label: "Wiadomości", n: extraCounts.messages, cls: "sc-messages" },
+      { id: "sec-homework", icon: "book", label: "Zadania", n: extraCounts.homework, cls: "sc-homework" },
       // Plan lekcji i Frekwencja to liczby porządkowe, nie "coś nowego do sprawdzenia" — bez odznaki,
       // żeby nie wyglądały jak alert obok Ocen/Uwag/Wiadomości.
-      { id: "sec-plan", icon: "clock", label: "Plan lekcji", n: 0 },
-      { id: "sec-attendance", icon: "calendar", label: "Frekwencja", n: 0 },
-      { id: "sec-whatsapp", icon: "chat", label: "WhatsApp", n: extraCounts.whatsapp },
-      { id: "sec-calendar", icon: "calendar", label: "Kalendarz", n: 0 },
+      { id: "sec-plan", icon: "clock", label: "Plan lekcji", n: 0, cls: "sc-plan" },
+      { id: "sec-attendance", icon: "calendar", label: "Frekwencja", n: 0, cls: "sc-attendance" },
+      { id: "sec-whatsapp", icon: "chat", label: "WhatsApp", n: extraCounts.whatsapp, cls: "sc-whatsapp" },
+      { id: "sec-calendar", icon: "calendar", label: "Kalendarz", n: 0, cls: "sc-calendar" },
     ];
     return `<div class="card shortcuts"><div class="shortcuts-grid">${items.map((it) => `
-      <button class="short-btn" data-scrollto="${it.id}">${icon(it.icon)}<span class="lbl">${esc(it.label)}</span>${it.n > 0 ? `<span class="n">${it.n > 99 ? "99+" : it.n}</span>` : ""}</button>`).join("")}
+      <button class="short-btn" data-scrollto="${it.id}"><span class="sc-ic ${it.cls}">${icon(it.icon)}</span><span class="lbl">${esc(it.label)}</span>${it.n > 0 ? `<span class="n">${it.n > 99 ? "99+" : it.n}</span>` : ""}</button>`).join("")}
     </div></div>`;
   }
 
@@ -2013,6 +2044,10 @@
       ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${esc((k.name || "?").charAt(0).toUpperCase())}</span>${esc(k.name)}</button>`).join("")}`;
 
     $("#hero-date").textContent = new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
+    const bellCount = d ? buildUrgentItems(d, "all").length : 0;
+    const bellBadge = $("#bell-badge");
+    bellBadge.hidden = bellCount === 0;
+    bellBadge.textContent = bellCount > 9 ? "9+" : String(bellCount);
     const dot = $("#sync-dot"), text = $("#sync-text");
     if (d?.lastSync) {
       const time = fmtStamp(d.lastSync.timestamp);
@@ -2112,6 +2147,13 @@
   });
   document.addEventListener("click", (e) => {
     if (e.target.closest("#profile-btn")) { state.profileOpen = true; render(); return; }
+    if (e.target.closest("#bell-btn")) {
+      if (state.view !== "pulpit") { state.view = "pulpit"; render(); }
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        document.querySelector(".verdict-ok, .verdict-urgent")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }));
+      return;
+    }
     if (e.target.closest("[data-profile-close]")) { state.profileOpen = false; render(); return; }
     const goto = e.target.closest("[data-goto]");
     if (goto) { state.view = goto.dataset.goto; state.profileOpen = false; render(); window.scrollTo(0, 0); return; }
