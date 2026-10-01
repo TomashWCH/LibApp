@@ -453,6 +453,22 @@
   .u-row .main small { opacity: .75; font-size: .78rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .u-row .chev { opacity: .6; flex: none; }
   .u-row .chev .ic { width: 16px; height: 16px; }
+  .day-rest { position: relative; margin-top: 10px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.18); }
+  .verdict-ok .day-rest { border-top-color: rgba(255,255,255,.3); }
+  .u-row2 { display: flex; align-items: center; gap: 10px; padding: 8px 2px; text-align: left; }
+  .u-row2 .u-ic { width: 30px; height: 30px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,.18); }
+  .u-row2 .u-ic .ic { width: 15px; height: 15px; }
+  .u-row2 .main { flex: 1; min-width: 0; }
+  .u-row2 .main b { display: block; font-size: .88rem; }
+  .u-row2 .main small { opacity: .8; font-size: .76rem; }
+  .u-row2.u-plan { align-items: flex-start; }
+  .u-row2.u-plan .main > b { display: block; margin-bottom: 4px; }
+  .u-row2.u-plan ul.lessons { margin: 0; }
+  .u-row2.u-plan ul.lessons li { color: #fff; font-size: .84rem; padding: 4px 0; }
+  .u-row2.u-plan ul.lessons .nr { background: rgba(255,255,255,.2); color: #fff; }
+  .u-row2.u-plan ul.lessons .nr.nr-extra { background: rgba(255,255,255,.3); }
+  .u-row2.u-plan ul.lessons .main small { opacity: .78; }
+  .u-row2.u-plan ul.lessons .flag, .u-row2.u-plan ul.lessons .flag-extra { color: #ffe0b0; }
   .card.t-tomorrow { background: var(--tomorrow-soft); border-left-color: var(--tomorrow); }
   .card.t-week { background: var(--plan-soft); border-left-color: var(--plan); }
   .card.t-more { background: var(--c2-soft); border-left-color: var(--c2); }
@@ -572,7 +588,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-01 · 27"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-01 · 29"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -1356,7 +1372,7 @@
       <p class="empty" style="margin:8px 0 0">Widoczne dla Was obojga.</p></details>`;
   }
 
-  function viewTodo(d) {
+  function viewTodo(d, hideGroups = []) {
     const kids = getChildren(d);
     if (kids.length === 0) return `${addTodoForm()}<div class="card"><p>Czekam na pierwszą synchronizację.</p></div>`;
     const done = loadDone();
@@ -1371,7 +1387,7 @@
       ["W tym tygodniu", open.filter((t) => t.due && t.due > tomorrow && t.due <= weekEnd), false],
       ["Później", open.filter((t) => t.due && t.due > weekEnd), false],
       ["Bez terminu", open.filter((t) => !t.due), false],
-    ].filter(([, list]) => list.length);
+    ].filter(([title, list]) => list.length && !hideGroups.includes(title));
 
     const html = groups.map(([title, list, over]) => `<h2 class="sec">${title} · ${list.length}</h2>
       <div class="card"><ul class="rows">${list.map((t) => todoRow(t, false, over)).join("")}</ul></div>`).join("");
@@ -1697,6 +1713,7 @@
   // alarm, więc oceny tu nie trafiają — mają swoje miejsce w kartach dzieci.
   function buildUrgentItems(d, scopeKey) {
     const today = todayISO();
+    const done = loadDone();
     const out = [];
     const kids = getChildren(d).filter((k) => scopeKey === "all" || k.key === scopeKey);
     for (const k of kids) {
@@ -1714,11 +1731,38 @@
     const kidKeys = new Set(kids.map((k) => k.key));
     for (const t of todoItems(d)) {
       if (t.k !== MANUAL_K && !kidKeys.has(t.k.key)) continue;
-      if (t.due === today && !loadDone().has(t.id) && t.kind !== "hw") {
+      if (done.has(t.id) || t.kind === "hw" || !t.due) continue;
+      if (t.due === today) {
         out.push({ child: t.k === MANUAL_K ? null : t.k, title: t.text, subtitle: "termin: dziś", target: t.k === MANUAL_K ? null : "sec-events" });
+      } else if (t.due < today) {
+        out.push({ child: t.k === MANUAL_K ? null : t.k, title: t.text, subtitle: `zaległe od ${fmtDate(t.due)}`, target: t.k === MANUAL_K ? null : "sec-events" });
       }
     }
     return out;
+  }
+
+  // Reszta dzisiejszego dnia, która NIE jest już pokazana jako pilna wyżej: zwykłe (nie-egzaminowe)
+  // wydarzenia, skrót planu lekcji per dziecko, szczęśliwy numerek. Ta sama karta, ten sam styl —
+  // "mięso dnia" w jednym miejscu, zamiast osobnych kafli mówiących to samo.
+  function dayRestRows(d, scopeKey) {
+    const today = todayISO();
+    const kids = getChildren(d).filter((k) => scopeKey === "all" || k.key === scopeKey);
+    const rows = [];
+    for (const k of kids) {
+      for (const ev of allEvents(k).filter((e) => e.date === today && !examLabel(e.title))) {
+        rows.push(`<div class="u-row2"><span class="u-ic">${icon("calendar")}</span><div class="main"><b>${esc(ev.title)}</b><small>${kids.length > 1 ? esc(k.name) + " · " : ""}${ev.time ? esc(ev.time) : "dziś"}${ev.sourceNote ? " · " + esc(ev.sourceNote) : ""}</small></div></div>`);
+      }
+    }
+    for (const k of kids) {
+      const lessons = lessonsForDate(k.key, k.extra?.timetable, today);
+      if (!lessons.length) continue;
+      rows.push(`<div class="u-row2 u-plan"><span class="u-ic">${icon("clock")}</span><div class="main"><b>${kids.length > 1 ? esc(k.name) + " · " : ""}Plan lekcji · ${lessons.length}</b>${lessonsList(lessons)}</div></div>`);
+    }
+    for (const k of kids) {
+      if (k.extra?.luckyNumber == null) continue;
+      rows.push(`<div class="u-row2"><span class="u-ic">${icon("sparkle")}</span><div class="main"><b>Szczęśliwy numerek${kids.length > 1 ? ` — ${esc(k.name)}` : ""}</b><small>${esc(k.extra.luckyNumber)}</small></div></div>`);
+    }
+    return rows.join("");
   }
 
   function pulpitSwitcher(d) {
@@ -1728,16 +1772,20 @@
     return `<div class="seg pulpit-switch">${btn("all", "Wspólnie")}${kids.map((k) => btn(k.key, esc(k.name))).join("")}</div>`;
   }
 
-  function verdictCard(d) {
+  function dayHero(d) {
     const scope = getChildren(d).some((k) => k.key === state.pulpitScope) ? state.pulpitScope : "all";
     const kids = getChildren(d).filter((k) => scope === "all" || k.key === scope);
     const items = buildUrgentItems(d, scope);
+    const restRows = dayRestRows(d, scope);
+    const hasOverdue = items.some((it) => it.subtitle?.startsWith("zaległe"));
+
     if (!items.length) {
       const names = kids.map((k) => esc(k.name)).join(kids.length === 2 ? " i " : ", ");
       return `<div class="verdict-ok">
         <div class="v-ring">${icon("check")}</div>
         <h2>Dziś wszystko spokojnie</h2>
         <p>${kids.length ? `${names} nie ${kids.length === 1 ? "ma" : "mają"} dziś pilnych spraw.` : "Brak danych."}</p>
+        ${restRows ? `<div class="day-rest">${restRows}</div>` : ""}
       </div>`;
     }
     const rows = items.map((it) => {
@@ -1750,8 +1798,9 @@
       </div>`;
     }).join("");
     return `<div class="verdict-urgent">
-      <div class="v-head"><span class="v-badge">${items.length}</span><div><h2>Wymaga Twojej uwagi</h2><small>zebrane ${kids.length > 1 ? "z obu dzieci " : ""}na dziś</small></div></div>
+      <div class="v-head"><span class="v-badge">${items.length}</span><div><h2>Wymaga Twojej uwagi</h2><small>zebrane ${kids.length > 1 ? "z obu dzieci " : ""}${hasOverdue ? "na dziś i zaległe" : "na dziś"}</small></div></div>
       ${rows}
+      ${restRows ? `<div class="day-rest">${restRows}</div>` : ""}
     </div>`;
   }
 
@@ -1785,9 +1834,11 @@
     const sunday = new Date().getDay() === 0;
     const week = weekCard(d, sunday);
     const doneNow = loadDone();
-    const dueCount = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due <= today).length;
-    const allTasksCard = `<details class="card t-hw"><summary>${icon("check")} Zadania${dueCount ? ` <span class="sub">· ${dueCount} na dziś lub po terminie</span>` : ""}</summary>${viewTodo(d)}</details>`;
-    return `${searchCard(d)}${verdictCard(d)}${pulpitSwitcher(d)}${sunday ? week : ""}${dayCard(d, today, "Dziś")}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}${allTasksCard}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    // "Dziś" i "Po terminie" są już w karcie dnia (werdykt) — tu tylko to, co dopiero nadchodzi,
+    // żeby nie pokazywać tego samego zadania drugi raz na tej samej stronie.
+    const dueCount = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due > today).length;
+    const allTasksCard = `<details class="card t-hw"><summary>${icon("check")} Zadania${dueCount ? ` <span class="sub">· ${dueCount} nadchodzących</span>` : ""}</summary>${viewTodo(d, ["Po terminie", "Dziś"])}</details>`;
+    return `${searchCard(d)}${dayHero(d)}${pulpitSwitcher(d)}${sunday ? week : ""}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}${allTasksCard}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       <p class="empty" style="text-align:center;font-size:0.75rem;margin-top:16px">Wersja z ${BUILD_DISPLAY}</p>`;
   }
 
@@ -1852,9 +1903,9 @@
   // Pasek skrótów na górze karty dziecka — jeden klik przewija do właściwej sekcji niżej.
   function shortcutsBar(c, s, extraCounts) {
     const items = [
-      { id: "sec-grades", icon: "star", label: "Oceny", n: s.grades.length },
-      { id: "sec-remarks", icon: "alert", label: "Uwagi", n: s.remarks.length },
-      { id: "sec-events", icon: "calendar", label: "Wydarzenia", n: s.events.length },
+      { id: "sec-grades", icon: "star", label: "Oceny", n: extraCounts.grades },
+      { id: "sec-remarks", icon: "alert", label: "Uwagi", n: extraCounts.remarks },
+      { id: "sec-events", icon: "calendar", label: "Wydarzenia", n: extraCounts.events },
       { id: "sec-messages", icon: "mail", label: "Wiadomości", n: extraCounts.messages },
       { id: "sec-homework", icon: "book", label: "Zadania", n: extraCounts.homework },
       // Plan lekcji i Frekwencja to liczby porządkowe, nie "coś nowego do sprawdzenia" — bez odznaki,
@@ -1913,19 +1964,18 @@
 
     const events = s.events.map((ev) => eventRow(ev, c, false)).join("");
 
-    // Zliczenia do paska skrótów (te same liczby, co przy poszczególnych sekcjach niżej).
+    // Zliczenia do paska skrótów — CELOWO tylko z dzisiejszego dnia, dla każdej ikony tak samo
+    // (spójność ważniejsza niż "ile w ogóle jest nowego" — to drugie i tak widać w sekcjach niżej).
     const doneForCounts = loadDone();
     const todayForCounts = todayISO();
-    const hwCount = todoItems(d).filter((t) => t.kind === "hw" && t.k.key === c.key).length;
-    const lessonsCount = Array.from({ length: 8 }, (_, n) => shiftISO(todayForCounts, n))
-      .reduce((sum, iso) => sum + lessonsForDate(c.key, c.extra?.timetable, iso).length, 0);
-    const shortcutCounts = {
-      messages: msgFull ? unread : s.messages.filter((m) => m.unread).length,
-      homework: hwCount,
-      lessons: lessonsCount,
-      attendance: c.extra?.absence?.total || 0,
-      whatsapp: c.wa ? waRecent(c, 48).length : 0,
-    };
+    const todayStartMs = new Date(todayForCounts + "T00:00:00").getTime();
+    const gradesToday = gradesOf(c).filter((g) => g.date === todayForCounts).length;
+    const remarksToday = (c.extra?.remarkList?.length ? c.extra.remarkList : arr(c.sections?.remarks)).filter((r) => r.date === todayForCounts).length;
+    const eventsToday = allEvents(c).filter((e) => e.date === todayForCounts).length;
+    const msgsToday = (Array.isArray(c.extra?.messages) ? c.extra.messages : arr(c.sections?.messages)).filter((m) => (m.data || m.date) === todayForCounts).length;
+    const hwToday = todoItems(d).filter((t) => t.kind === "hw" && t.k.key === c.key && t.due === todayForCounts && !doneForCounts.has(t.id)).length;
+    const waToday = c.wa ? arr(c.wa.entries).filter((e) => (e.atMs || 0) >= todayStartMs).length : 0;
+    const shortcutCounts = { grades: gradesToday, remarks: remarksToday, events: eventsToday, messages: msgsToday, homework: hwToday, whatsapp: waToday };
 
     return `<div class="c${c.idx}">
       <div class="child-head"><span class="avatar">${esc((c.name || "?").charAt(0).toUpperCase())}</span>
