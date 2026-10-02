@@ -185,9 +185,13 @@ Z poniższych danych JSON przygotuj obiekt z polami:
     niezależnie od daty. Ten sam kształt obiektów co w punkcie 3.
 
 4. "events" — nadchodzące wydarzenia od dziś do ${EVENTS_AHEAD_DAYS} dni w przód
-   z terminarza i ogłoszeń (sprawdziany, wycieczki, wywiadówki, terminy oddania):
+   z terminarza, ogłoszeń ORAZ wiadomości (sprawdziany, wycieczki, wywiadówki, terminy oddania):
    [{"title": string, "date": "YYYY-MM-DD", "time": "HH:MM" albo null,
    "sourceNote": string}]. Bez duplikatów. Nie zgaduj dat — pomiń wydarzenie bez daty.
+   WAŻNE przy sprawdzianach/kartkówkach: jeśli nauczyciel w wiadomości napisał, z czego
+   będzie sprawdzian (zakres materiału, rozdziały, zagadnienia), wpisz to W CAŁOŚCI do
+   "sourceNote" — nie skracaj, nie streszczaj do kilku słów. To najważniejsza informacja
+   dla rodzica przy tym wydarzeniu.
 
 5. "messages" — wiadomości nieprzeczytane lub z ostatnich ${NEW_DAYS} dni oraz ogłoszenia:
    [{"from": string, "subject": string, "date": string albo null,
@@ -305,6 +309,13 @@ function parseTimetable(res, mondayISO) {
 }
 
 // ---------- Pełna treść wiadomości (żeby czytać je w appce, bez przełączania do Librusa) ----------
+// Rozpoznanie sprawdzianu/kartkówki po tytule w terminarzu — ten sam wzorzec co w appce
+// (examLabel w index.html), żeby oba miejsca zgadzały się co do tego, co jest "sprawdzianem".
+const EXAM_RE = /kartk|sprawdzian|klasówk|\btest\b|egzamin|dyktando/i;
+// Ile szczegółów pojedynczych wpisów terminarza (z polem "Opis") pobieramy max w jednej
+// synchronizacji — to osobne zapytanie na KAŻDY wpis, więc ograniczamy do sprawdzianów
+// i rozsądnej liczby, żeby nie wydłużać synchronizacji bez potrzeby.
+const EXAM_DETAIL_LIMIT = 25;
 const MESSAGE_BODY_LIMIT = 20; // ile wiadomości max pobieramy w jednej synchronizacji (nieprzeczytane najpierw)
 const MESSAGE_BODY_CONCURRENCY = 3;
 
@@ -607,6 +618,7 @@ async function loadLookups(client) {
 const personName = (p) => cleanText([p?.FirstName, p?.LastName].filter(Boolean).join(" "), 40);
 
 // Wynik Timetables?weekStart=... -> [{ date, lessons: [{ nr, time, title, teacher, room, flag }] }]
+let roomDiagLogged = false; // TYMCZASOWE: usunąć po ustaleniu, czy Librus w ogóle przesyła salę
 function parseApiTimetable(json, lookups = {}) {
   const tt = json?.Timetable ?? {};
   const days = [];
@@ -619,6 +631,10 @@ function parseApiTimetable(json, lookups = {}) {
         const subj = e.Subject?.Name ? e.Subject : lookups.subjects?.[String(e.Subject?.Id)] ?? e.Subject ?? {};
         const teacher = e.Teacher?.LastName ? e.Teacher : lookups.users?.[String(e.Teacher?.Id)] ?? e.Teacher ?? {};
         const room = e.Classroom?.Name ?? e.Classroom?.Symbol ?? lookups.classrooms?.[String(e.Classroom?.Id)]?.Name ?? lookups.classrooms?.[String(e.Classroom?.Id)]?.Symbol ?? "";
+        if (!roomDiagLogged) {
+          roomDiagLogged = true;
+          console.log(`  [diagnostyka sali] Classroom w odpowiedzi Librusa: ${JSON.stringify(e.Classroom)} | lookups.classrooms ma wpisów: ${Object.keys(lookups.classrooms || {}).length} | wszystkie klucze lekcji: ${Object.keys(e).join(", ")}`);
+        }
         const title = cleanText(subj.Name || e.OrgSubject?.Name || subj.Short || "", 90);
         if (!title && !e.LessonNo) continue;
         const from = hhmm(e.HourFrom), to = hhmm(e.HourTo);
@@ -824,6 +840,25 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     .flat(Infinity)
     .filter((e) => e && e.title);
 
+  // Opis sprawdzianu/kartkówki (zakres materiału) jest dostępny TYLKO po wejściu w szczegóły
+  // pojedynczego wpisu terminarza (osobne zapytanie na każdy) — lista zbiorcza ma tylko tytuł.
+  // Pobieramy to bezpośrednio z Librusa (pole "Opis"), bez udziału AI — więc jest w 100% pewne.
+  const examEntries = calendarAll
+    .filter((e) => Number.isFinite(e.id) && e.id > 0 && EXAM_RE.test(e.title || ""))
+    .filter((e) => { const dd = normalizeDay(e.day); return dd && dd >= today && dd <= until; })
+    .slice(0, EXAM_DETAIL_LIMIT);
+  const examDescriptions = new Map(); // "data|tytuł" -> opis
+  if (examEntries.length) {
+    const results = await Promise.allSettled(examEntries.map((e) => client.calendar.getEvent(e.id)));
+    examEntries.forEach((e, i) => {
+      const r = results[i];
+      const desc = r.status === "fulfilled" ? cleanText(r.value?.description, 600) : "";
+      if (desc) examDescriptions.set(`${normalizeDay(e.day)}|${cleanText(e.title, 90)}`, desc);
+      else if (r.status === "rejected") console.warn(`  ! szczegóły terminarza (id ${e.id}): ${r.reason?.message || r.reason}`);
+    });
+    console.log(`  terminarz: sprawdzianów do sprawdzenia ${examEntries.length}, z opisem ${examDescriptions.size}`);
+  }
+
   if (
     asArray(subjects).length === 0 &&
     asArray(announcements).length === 0 &&
@@ -892,7 +927,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
   for (const g of extra.gradeList) if (g.base == null) letters[g.value] = (letters[g.value] || 0) + 1;
   console.log(`  oceny: biblioteka ${asArray(subjects).reduce((n, s) => n + asArray(s?.semester).reduce((m, x) => m + asArray(x?.grades).length, 0), 0)}, wszystkie pola ${asArray(gradeBoxes).length}, razem ${extra.gradeList.length}; bez cyfry: ${Object.entries(letters).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"}`);
 
-  return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst, extra };
+  return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst, extra, examDescriptions };
 }
 
 // ---------- Synchronizacja ----------
@@ -948,6 +983,16 @@ async function syncChild(child, attachmentCache, previousRemarks = []) {
   raw.extra.remarkList = [...mergedRemarks.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   console.log(`[${child.name}] uwagi: nowo zgłoszone przez Gemini ${ai.sections.remarksAll.length}, łącznie po scaleniu ${raw.extra.remarkList.length}`);
   delete ai.sections.remarksAll; // już przeniesione do extra.remarkList — nie dublujemy w bazie
+
+  // Zakres materiału na sprawdzian/kartkówkę: jeśli mamy go wprost z pola "Opis" w terminarzu
+  // (patrz examDescriptions — pobrane bezpośrednio, bez AI), to NADPISUJE to, co ewentualnie
+  // zgadł Gemini z tekstu wiadomości — pewne źródło wygrywa z niepewnym.
+  if (raw.examDescriptions?.size) {
+    for (const ev of ai.sections.events) {
+      const desc = raw.examDescriptions.get(`${ev.date}|${ev.title}`);
+      if (desc) ev.sourceNote = desc;
+    }
+  }
 
   return { ...ai, extra: raw.extra };
 }
