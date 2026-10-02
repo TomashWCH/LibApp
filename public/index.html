@@ -10,8 +10,7 @@
 <link rel="manifest" href="manifest.json" />
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png" />
 <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-<meta name="theme-color" content="#0f7286" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#0b2f3a" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" id="theme-color-meta" content="#0f7286" />
 <style>
   :root {
     --bg: #eef2f1;
@@ -37,8 +36,10 @@
     --tomorrow: #a23e6f; --tomorrow-soft: #f6dde9;
     --settings: #5b6b7a; --settings-soft: #e6eaec;
   }
+  /* Motyw: domyślnie wg systemu, ale manualny wybór (patrz Ustawienia) nadpisuje przez
+     atrybut data-theme na <html> — tak samo jak publikowane strony w tej appce. */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --bg: #0e1517;
       --card: #162126;
       --ink: #eaf1f2;
@@ -62,6 +63,30 @@
       --tomorrow: #ec9ac0; --tomorrow-soft: #3a1f2c;
       --settings: #a3b1bc; --settings-soft: #26303a;
     }
+  }
+  :root[data-theme="dark"] {
+      --bg: #0e1517;
+      --card: #162126;
+      --ink: #eaf1f2;
+      --muted: #97a8ad;
+      --line: rgba(234, 241, 242, 0.12);
+      --accent: #4cc3cf;
+      --on-accent: #06181b;
+      --ok: #4cc98a;
+      --err: #f08080;
+      --warn: #f0b04a;
+      --warn-soft: #3a2c12;
+      --err-soft: #3d1f1f;
+      --ok-soft: #14352a;
+      --c0: #4cc3cf; --c0-soft: #17393d;
+      --c1: #e08fc4; --c1-soft: #3a2133;
+      --c2: #f0b04a; --c2-soft: #3a2c12;
+      --g4: #7db2ff; --g4-soft: #1b2c47;
+      --hw: #6fd9a0; --hw-soft: #17372a;
+      --msg: #c3a6ec; --msg-soft: #2c2140;
+      --plan: #97a8f0; --plan-soft: #232a4a;
+      --tomorrow: #ec9ac0; --tomorrow-soft: #3a1f2c;
+      --settings: #a3b1bc; --settings-soft: #26303a;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -154,6 +179,12 @@
   .tag { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--ch-soft); color: var(--ch); margin-right: 6px; }
   .add { background: transparent; border: 1px solid var(--accent); color: var(--accent); border-radius: 10px; padding: 6px 10px; font-size: 0.8rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
   .daysleft { flex: none; background: var(--accent-soft); color: var(--accent); font-size: 0.72rem; font-weight: 800; padding: 4px 8px; border-radius: 999px; white-space: nowrap; }
+  .ev-note { margin-top: 4px; }
+  .ev-note > summary { color: var(--accent); font-size: 0.82rem; font-weight: 600; cursor: pointer; list-style: none; }
+  .ev-note > summary::-webkit-details-marker { display: none; }
+  .ev-note > summary::before { content: "▸ "; }
+  .ev-note[open] > summary::before { content: "▾ "; }
+  .ev-note p { margin: 6px 0 0; font-size: 0.88rem; color: var(--ink); background: var(--bg); border-radius: 10px; padding: 8px 10px; }
   .add:disabled { opacity: 0.6; cursor: default; }
   .added { color: var(--ok); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
@@ -397,11 +428,16 @@
     --hero-a: #0d7c86; --hero-b: #2f5fb3;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
       --accent-soft: #17393d;
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 22px rgba(0, 0, 0, 0.35);
       --hero-a: #0b4f5a; --hero-b: #1d3a73;
     }
+  }
+  :root[data-theme="dark"] {
+      --accent-soft: #17393d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 8px 22px rgba(0, 0, 0, 0.35);
+      --hero-a: #0b4f5a; --hero-b: #1d3a73;
   }
   body { padding-top: 0; background: var(--bg); }
   .ic { width: 1.2em; height: 1.2em; vertical-align: -0.24em; flex: none; }
@@ -607,7 +643,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-02 · 33"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-02 · 34"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -673,6 +709,27 @@
   // ---------- stan ----------
   const now0 = new Date();
   const state = { data: null, view: "pulpit", gradeSem: "cur", prefs: "pending", names: {}, manualTodos: [], searchQuery: "", calFilter: null, pulpitScope: "all", profileOpen: false, push: { supported: false }, cal: { y: now0.getFullYear(), m: now0.getMonth() }, calDay: todayISO() };
+
+  // ---------- Motyw: jasny / ciemny / systemowy (zapamiętane na tym urządzeniu) ----------
+  let theme = "system";
+  try { theme = localStorage.getItem("libapp_theme") || "system"; } catch {}
+  function applyTheme() {
+    document.documentElement.dataset.theme = theme === "system" ? "" : theme;
+    const systemDark = typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const isDark = theme === "dark" || (theme === "system" && systemDark);
+    const meta = document.getElementById("theme-color-meta");
+    if (meta) meta.content = isDark ? "#0b2f3a" : "#0f7286";
+  }
+  function setTheme(v) {
+    theme = v === "light" || v === "dark" ? v : "system";
+    try { localStorage.setItem("libapp_theme", theme); } catch {}
+    applyTheme();
+    render();
+  }
+  applyTheme();
+  if (typeof window.matchMedia === "function") {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { if (theme === "system") applyTheme(); });
+  }
   const registry = new Map(); // id wydarzenia -> { ev, childKey, childName }
 
   function loadAdded() {
@@ -736,11 +793,18 @@
     const added = loadAdded().has(id);
     const canAdd = isoDate.test(ev.date || "");
     const dl = daysLabel(ev.date);
+    const note = (ev.sourceNote || "").trim();
+    // Krótką notatkę (np. "WhatsApp") pokazujemy od razu w linii. Dłuższą (np. zakres materiału
+    // na sprawdzian, którą nauczyciel wpisał w wiadomości) chowamy za rozwijanym "zakres" —
+    // pełny tekst widoczny po kliknięciu, zamiast całkiem znikać jak wcześniej.
+    const shortNote = note && note.length <= 40 ? note : null;
+    const longNote = note && note.length > 40 ? note : null;
     return `<li>
       ${dl ? `<span class="daysleft">${esc(dl)}</span>` : ""}
       <div class="main">
         <b>${esc(ev.title)}${examLabel(ev.title) ? ` <span class="chip neg">${examLabel(ev.title)}</span>` : ""}</b>
-        <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${ev.sourceNote && ev.sourceNote.length <= 40 ? " · " + esc(ev.sourceNote) : ""}</small>
+        <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${shortNote ? " · " + esc(shortNote) : ""}</small>
+        ${longNote ? `<details class="ev-note"><summary>Zakres / treść zapowiedzi</summary><p>${esc(longNote)}</p></details>` : ""}
       </div>
       ${added ? `<span class="added">${icon("check")} Dodano</span>` : canAdd ? `<button class="add" data-add="${id}">${icon("calplus")} Dodaj</button>` : ""}
     </li>`;
@@ -1005,10 +1069,14 @@
   // klik w dzień przenosi do wspólnej zakładki Kalendarz, już przefiltrowanej do tego dziecka.
   function miniCalendar(d, child) {
     const now = new Date();
+    const today = todayISO();
     const byDay = buildDayIndex(d, [child]);
+    const dayTitle = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
     return `<div class="card" id="sec-calendar" data-child-scope="${esc(child.key)}"><div class="sect-title"><h3>${icon("calendar")} Kalendarz</h3></div>
-      ${calendarGrid(byDay, now.getFullYear(), now.getMonth(), { embedded: true, selDay: todayISO() })}
-      <p class="empty" style="margin-top:8px">Dotknij dnia, aby zobaczyć szczegóły we wspólnym kalendarzu.</p>
+      ${calendarGrid(byDay, now.getFullYear(), now.getMonth(), { embedded: true, selDay: today })}
+      <p class="empty" style="margin-top:8px">Dotknij innego dnia, aby zobaczyć go we wspólnym kalendarzu.</p>
+      <div class="sub-hd" style="margin-top:12px">${esc(dayTitle)}</div>
+      ${dayListRows(byDay, today)}
     </div>`;
   }
 
@@ -1035,6 +1103,7 @@
     pencil: '<path d="M4 20l1-4L15.5 5.5a2 2 0 0 1 2.8 0l.2.2a2 2 0 0 1 0 2.8L8.5 19 4 20z"/><path d="M14 7l3 3"/>',
     suitcase: '<rect x="3" y="8" width="18" height="12" rx="2"/><path d="M9 8V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/>',
     search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
+    moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>',
   };
   const icon = (name, cls = "") =>
     `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SVG[name] || ""}</svg>`;
@@ -1722,8 +1791,11 @@
       notif = `<p class="empty" style="margin:0 0 8px">Dostaniesz alert o nowej ocenie, uwadze, nowym sprawdzianie oraz poranne i wieczorne podsumowanie.</p>
         <button id="push-on" class="btn btn-small">${icon("bell")} Włącz powiadomienia</button>`;
     }
-    return `<details class="card t-settings"><summary>${icon("sliders")} Ustawienia</summary>${names}${scaleHtml}
-      <div class="fld-h" ${names || scaleHtml ? 'style="margin-top:16px"' : ""}>${icon("clock")} Kondycja synchronizacji</div>
+    const themeBtn = (val, label) => `<button data-theme-set="${val}" class="${theme === val ? "on" : ""}" aria-pressed="${theme === val}">${label}</button>`;
+    const themeHtml = `<div class="fld-h">${icon("moon")} Motyw</div>
+      <div class="seg" style="margin-top:0 0 4px">${themeBtn("system", "Systemowy")}${themeBtn("light", "Jasny")}${themeBtn("dark", "Ciemny")}</div>`;
+    return `<details class="card t-settings"><summary>${icon("sliders")} Ustawienia</summary>${themeHtml}${names}${scaleHtml}
+      <div class="fld-h" style="margin-top:16px">${icon("clock")} Kondycja synchronizacji</div>
       ${syncHealthLine(d)}
       <div class="fld-h" style="margin-top:16px">${icon("bell")} Powiadomienia</div>${notif}</details>`;
   }
@@ -1884,12 +1956,8 @@
     const today = todayISO();
     const sunday = new Date().getDay() === 0;
     const week = weekCard(d, sunday);
-    const doneNow = loadDone();
-    // "Dziś" i "Po terminie" są już w karcie dnia (werdykt) — tu tylko to, co dopiero nadchodzi,
-    // żeby nie pokazywać tego samego zadania drugi raz na tej samej stronie.
-    const dueCount = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due > today).length;
-    const allTasksCard = `<details class="card t-hw"><summary>${icon("check")} Zadania${dueCount ? ` <span class="sub">· ${dueCount} nadchodzących</span>` : ""}</summary>${viewTodo(d, ["Po terminie", "Dziś"])}</details>`;
-    return `${searchCard(d)}${dayHero(d)}${pulpitSwitcher(d)}${todayEventsCard(d)}${todayPlanCard(d)}${sunday ? week : ""}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}${allTasksCard}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    // "Do zrobienia" ma teraz znów własną zakładkę na dole — nie powtarzamy tej listy tutaj.
+    return `${searchCard(d)}${dayHero(d)}${pulpitSwitcher(d)}${todayEventsCard(d)}${todayPlanCard(d)}${sunday ? week : ""}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       <p class="empty" style="text-align:center;font-size:0.75rem;margin-top:16px">Wersja z ${BUILD_DISPLAY}</p>`;
   }
 
@@ -2058,9 +2126,12 @@
     $("#content").innerHTML = (state.view === "pulpit" ? viewPulpit(d) : state.view === "kalendarz" ? viewKalendarz(d) : state.view === "todo" ? viewTodo(d) : viewChild(d, state.view)) + profileOverlay(d);
     document.body.classList.toggle("profile-open", state.profileOpen);
 
+    const doneForNav = loadDone();
+    const dueNow = d ? todoItems(d).filter((t) => !doneForNav.has(t.id) && t.due && t.due <= todayISO()).length : 0;
     $("#nav").innerHTML = `
       <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("home")}</span>Dziś</button>
       <button data-goto="kalendarz" ${state.view === "kalendarz" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("calendar")}</span>Kalendarz</button>
+      <button data-goto="todo" ${state.view === "todo" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("check")}</span>Zadania${dueNow ? `<span class="nb" aria-label="${dueNow} na dziś lub po terminie">${dueNow}</span>` : ""}</button>
       ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${avatarInner(k)}</span>${esc(k.name)}</button>`).join("")}`;
 
     $("#hero-date").textContent = new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
@@ -2255,6 +2326,8 @@
       render();
       return;
     }
+    const themeBtnEl = e.target.closest("[data-theme-set]");
+    if (themeBtnEl) { setTheme(themeBtnEl.dataset.themeSet); return; }
     const miniDay = e.target.closest("[data-mini-day]");
     if (miniDay) {
       const child = e.target.closest("[data-child-scope]")?.dataset.childScope;
