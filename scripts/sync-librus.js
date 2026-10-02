@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import Librus from "librus-api";
+import * as cheerio from "cheerio";
 import admin from "firebase-admin";
 import fetch from "node-fetch";
 
@@ -760,6 +761,31 @@ const isoLike = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v ?? ""));
 // Firestore nie przyjmuje undefined/NaN — czyścimy przez JSON.
 const clean = (v) => JSON.parse(JSON.stringify(v ?? null));
 
+// Pobiera pole "Opis" ze szczegółów pojedynczego wpisu terminarza, czytając i parsując stronę
+// SAMODZIELNIE — biblioteka librus-api ma tu błąd (client.calendar.getEvent): zrzuca wszystkie
+// etykiety <th> i wszystkie wartości <td> z całej tabeli do dwóch osobnych list i zestawia je
+// po kolejności (indeksie), zamiast parować je wiersz po wierszu. Gdy który wiersz ma więcej niż
+// jedną komórkę z wartością (np. lekcja dzielona na dwie klasy), wszystko po nim się przesuwa i
+// pole "Opis" dostaje wartość z zupełnie innego wiersza. Dlatego parsujemy to sami, wiersz po
+// wierszu — odporne na taką nieregularność.
+async function fetchEventDescription(client, id) {
+  const html = await client.caller.get(`https://synergia.librus.pl/terminarz/szczegoly/${id}`).then((r) => r.data);
+  const $ = cheerio.load(html);
+  const table = $("table.decorated.medium.center tbody").first();
+  let desc = "";
+  table.find("tr").each((_, tr) => {
+    const label = $(tr).find("th").first().text().trim();
+    if (label !== "Opis") return;
+    desc = $(tr)
+      .find("td")
+      .map((__, td) => $(td).text().trim())
+      .get()
+      .filter(Boolean)
+      .join(" ");
+  });
+  return cleanText(desc, 600);
+}
+
 async function fetchLibrusData(login, password, today, since, until, attachmentCache) {
   const client = new Librus();
   // UWAGA: biblioteka połyka błędy logowania, dlatego niżej sprawdzamy, czy
@@ -846,10 +872,10 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     .slice(0, EXAM_DETAIL_LIMIT);
   const examDescriptions = new Map(); // "data|tytuł" -> opis
   if (examEntries.length) {
-    const results = await Promise.allSettled(examEntries.map((e) => client.calendar.getEvent(e.id)));
+    const results = await Promise.allSettled(examEntries.map((e) => fetchEventDescription(client, e.id)));
     examEntries.forEach((e, i) => {
       const r = results[i];
-      const desc = r.status === "fulfilled" ? cleanText(r.value?.description, 600) : "";
+      const desc = r.status === "fulfilled" ? r.value : "";
       if (desc) examDescriptions.set(`${normalizeDay(e.day)}|${cleanText(e.title, 90)}`, desc);
       else if (r.status === "rejected") console.warn(`  ! szczegóły terminarza (id ${e.id}): ${r.reason?.message || r.reason}`);
     });
