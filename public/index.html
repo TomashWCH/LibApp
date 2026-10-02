@@ -123,7 +123,9 @@
     box-shadow: 0 0 0 2.5px var(--ch-soft);
     color: #fff; font-weight: 700; text-shadow: 0 1px 2px rgba(0,0,0,.18);
     display: inline-flex; align-items: center; justify-content: center;
+    overflow: hidden;
   }
+  .avatar-img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 50%; }
   .sum { white-space: pre-line; color: var(--ink); margin-top: 10px; font-size: 0.95rem; }
   .counts { display: flex; gap: 14px; margin-top: 10px; font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
   .warnbox { background: var(--warn-soft); color: var(--warn); border-radius: 12px; padding: 10px 12px; font-size: 0.88rem; margin-bottom: 12px; }
@@ -463,7 +465,7 @@
   .v-head h2 { font-size: 1.05rem; margin: 0; line-height: 1.25; }
   .v-head small { display: block; opacity: .72; font-size: .78rem; font-weight: 500; margin-top: 1px; }
   .u-row { position: relative; display: flex; align-items: center; gap: 12px; padding: 12px 10px; margin-bottom: 8px; border-radius: 16px; background: rgba(255,255,255,.06); cursor: pointer; }
-  .u-ring { width: 32px; height: 32px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .78rem; background: conic-gradient(from 220deg, #ff8a8a, #ff5757 60%, #e0334f); color: #fff; }
+  .u-ring { width: 32px; height: 32px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: .78rem; background: conic-gradient(from 220deg, #ff8a8a, #ff5757 60%, #e0334f); color: #fff; overflow: hidden; }
   .u-row .main { flex: 1; min-width: 0; }
   .u-row .main b { display: block; font-size: .92rem; }
   .u-row .main small { opacity: .75; font-size: .78rem; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -518,7 +520,7 @@
   nav { border-top: 0; box-shadow: 0 -6px 24px rgba(15, 35, 45, 0.08); border-radius: 20px 20px 0 0; }
   nav .ico { width: 44px; height: 30px; border-radius: 15px; }
   nav .ico .ic { width: 22px; height: 22px; }
-  nav .ico.av { width: 30px; height: 30px; border-radius: 50%; }
+  nav .ico.av { width: 30px; height: 30px; border-radius: 50%; overflow: hidden; }
   nav button[aria-current="page"] .ico { box-shadow: none; background: var(--ch-soft, var(--accent-soft)); color: var(--ch, var(--accent)); }
   nav button[aria-current="page"] { color: var(--ch, var(--accent)); }
   nav button[aria-current="page"] .ico.av { box-shadow: 0 0 0 2px var(--ch, var(--accent)); }
@@ -605,7 +607,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-01 · 31"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-02 · 32"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -1326,6 +1328,12 @@
     </li>`;
   }
 
+  // ---------- awatary dzieci (prawdziwe zdjęcia zamiast inicjału, jeśli dostępne) ----------
+  const AVATAR_IMG = { DZIECKO1: "avatars/patryk.png", DZIECKO2: "avatars/zuzia.png" };
+  const avatarInner = (k) => AVATAR_IMG[k.key]
+    ? `<img src="${esc(AVATAR_IMG[k.key])}" alt="" class="avatar-img">`
+    : esc((k.name || "?").charAt(0).toUpperCase());
+
   // ---------- zajęcia pozalekcyjne (stałe w tygodniu, dopisane ręcznie — nie z Librusa) ----------
   // Klucz to sekretSuffix dziecka (DZIECKO1/DZIECKO2 z users.config.json). Dzień tygodnia: 1=poniedziałek … 7=niedziela.
   // Żeby zmienić lub dodać zajęcia, edytuj tę listę i wgraj nowy plik.
@@ -1820,7 +1828,7 @@
       </div>`;
     }
     const rows = items.map((it) => {
-      const initials = it.child ? esc((it.child.name || "?").charAt(0).toUpperCase()) : "·";
+      const initials = it.child ? avatarInner(it.child) : "·";
       const goto = it.child && it.target ? ` data-goto-scroll="${esc(it.child.key)}|${it.target}"` : "";
       return `<div class="u-row"${goto ? ` tabindex="0" role="button"${goto}` : ""}>
         <span class="u-ring">${initials}</span>
@@ -1850,7 +1858,7 @@
 
     const tiles = all.map(({ k, s }) => `
       <button class="tile c${k.idx}" data-goto="${esc(k.key)}">
-        <div class="tile-head"><span class="avatar">${esc((k.name || "?").charAt(0).toUpperCase())}</span><strong>${esc(k.name)}</strong><span class="chev" aria-hidden="true">${icon("chevron")}</span></div>
+        <div class="tile-head"><span class="avatar">${avatarInner(k)}</span><strong>${esc(k.name)}</strong><span class="chev" aria-hidden="true">${icon("chevron")}</span></div>
         ${k.lastError ? `<p class="sum" style="color:var(--warn)">${icon("alert")} Nie udało się odświeżyć: ${esc(k.lastError)}</p>` : ""}
         <p class="sum">${esc(k.summary || "Brak istotnych nowości.")}</p>
         ${gradeStrip(k)}
@@ -2009,7 +2017,7 @@
     const shortcutCounts = { grades: gradesToday, remarks: remarksToday, events: eventsToday, messages: msgsToday, homework: hwToday, whatsapp: waToday };
 
     return `<div class="c${c.idx}">
-      <div class="child-head"><span class="avatar">${esc((c.name || "?").charAt(0).toUpperCase())}</span>
+      <div class="child-head"><span class="avatar">${avatarInner(c)}</span>
         <div><h2>${esc(c.name)}</h2><small>${c.updatedAt ? "Zaktualizowano " + fmtStamp(c.updatedAt) : ""}${c.extra?.luckyNumber != null ? ` · ${icon("sparkle")} numerek ${esc(c.extra.luckyNumber)}` : ""}</small></div></div>
       ${hasSections ? shortcutsBar(c, s, shortcutCounts) : ""}
       ${c.lastError ? `<div class="warnbox">Ostatnie odświeżenie się nie udało: ${esc(c.lastError)}. Widać dane z poprzedniej synchronizacji.</div>` : ""}
@@ -2041,7 +2049,7 @@
     $("#nav").innerHTML = `
       <button data-goto="pulpit" ${state.view === "pulpit" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("home")}</span>Dziś</button>
       <button data-goto="kalendarz" ${state.view === "kalendarz" ? 'aria-current="page"' : ""}><span class="ico" aria-hidden="true">${icon("calendar")}</span>Kalendarz</button>
-      ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${esc((k.name || "?").charAt(0).toUpperCase())}</span>${esc(k.name)}</button>`).join("")}`;
+      ${kids.map((k) => `<button class="c${k.idx}" data-goto="${esc(k.key)}" ${state.view === k.key ? 'aria-current="page"' : ""}><span class="ico av" aria-hidden="true">${avatarInner(k)}</span>${esc(k.name)}</button>`).join("")}`;
 
     $("#hero-date").textContent = new Date().toLocaleDateString("pl-PL", { weekday: "long", day: "numeric", month: "long" });
     const bellCount = d ? buildUrgentItems(d, "all").length : 0;
