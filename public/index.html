@@ -607,7 +607,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-02 · 32"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-02 · 33"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -1783,25 +1783,40 @@
   // Reszta dzisiejszego dnia, która NIE jest już pokazana jako pilna wyżej: zwykłe (nie-egzaminowe)
   // wydarzenia, skrót planu lekcji per dziecko, szczęśliwy numerek. Ta sama karta, ten sam styl —
   // "mięso dnia" w jednym miejscu, zamiast osobnych kafli mówiących to samo.
-  function dayRestRows(d, scopeKey) {
+  function pulpitScopeKids(d) {
+    const scope = getChildren(d).some((k) => k.key === state.pulpitScope) ? state.pulpitScope : "all";
+    return getChildren(d).filter((k) => scope === "all" || k.key === scope);
+  }
+
+  // Osobna, zwykła karta — dzisiejsze wydarzenia, które NIE są już pokazane w werdykcie
+  // (tam trafiają tylko sprawdziany/kartkówki; reszta wydarzeń ma tu swoje miejsce).
+  function todayEventsCard(d) {
     const today = todayISO();
-    const kids = getChildren(d).filter((k) => scopeKey === "all" || k.key === scopeKey);
+    const kids = pulpitScopeKids(d);
     const rows = [];
     for (const k of kids) {
       for (const ev of allEvents(k).filter((e) => e.date === today && !examLabel(e.title))) {
-        rows.push(`<div class="u-row2"><span class="u-ic">${icon("calendar")}</span><div class="main"><b>${esc(ev.title)}</b><small>${kids.length > 1 ? esc(k.name) + " · " : ""}${ev.time ? esc(ev.time) : "dziś"}${ev.sourceNote ? " · " + esc(ev.sourceNote) : ""}</small></div></div>`);
+        rows.push(`<li><div class="main"><b>${esc(ev.title)}</b><small>${kids.length > 1 ? esc(k.name) + " · " : ""}${ev.time ? esc(ev.time) : "dziś"}${ev.sourceNote ? " · " + esc(ev.sourceNote) : ""}</small></div></li>`);
       }
     }
+    if (!rows.length) return "";
+    return `<div class="card t-event"><div class="sect-title"><h3>${icon("calendar")} Wydarzenia dziś</h3></div><ul class="rows">${rows.join("")}</ul></div>`;
+  }
+
+  // Osobna karta — plan lekcji na dziś (per dziecko) + szczęśliwy numerek.
+  function todayPlanCard(d) {
+    const today = todayISO();
+    const kids = pulpitScopeKids(d);
+    const blocks = [];
     for (const k of kids) {
       const lessons = lessonsForDate(k.key, k.extra?.timetable, today);
       if (!lessons.length) continue;
-      rows.push(`<div class="u-row2 u-plan"><span class="u-ic">${icon("clock")}</span><div class="main"><b>${kids.length > 1 ? esc(k.name) + " · " : ""}Plan lekcji · ${lessons.length}</b>${lessonsList(lessons)}</div></div>`);
+      blocks.push(`${kids.length > 1 ? `<div class="sub-hd">${esc(k.name)}</div>` : ""}${lessonsList(lessons)}`);
     }
-    for (const k of kids) {
-      if (k.extra?.luckyNumber == null) continue;
-      rows.push(`<div class="u-row2"><span class="u-ic">${icon("sparkle")}</span><div class="main"><b>Szczęśliwy numerek${kids.length > 1 ? ` — ${esc(k.name)}` : ""}</b><small>${esc(k.extra.luckyNumber)}</small></div></div>`);
-    }
-    return rows.join("");
+    const lucky = kids.filter((k) => k.extra?.luckyNumber != null)
+      .map((k) => `<p class="empty" style="margin-top:8px">${icon("sparkle")} Szczęśliwy numerek${kids.length > 1 ? ` — ${esc(k.name)}` : ""}: ${esc(k.extra.luckyNumber)}</p>`).join("");
+    if (!blocks.length && !lucky) return "";
+    return `<div class="card t-plan"><div class="sect-title"><h3>${icon("clock")} Plan lekcji dziś</h3></div>${blocks.join("")}${lucky}</div>`;
   }
 
   function pulpitSwitcher(d) {
@@ -1815,7 +1830,6 @@
     const scope = getChildren(d).some((k) => k.key === state.pulpitScope) ? state.pulpitScope : "all";
     const kids = getChildren(d).filter((k) => scope === "all" || k.key === scope);
     const items = buildUrgentItems(d, scope);
-    const restRows = dayRestRows(d, scope);
     const hasOverdue = items.some((it) => it.subtitle?.startsWith("zaległe"));
 
     if (!items.length) {
@@ -1824,7 +1838,6 @@
         <div class="v-ring">${icon("check")}</div>
         <h2>Dziś wszystko spokojnie</h2>
         <p>${kids.length ? `${names} nie ${kids.length === 1 ? "ma" : "mają"} dziś pilnych spraw.` : "Brak danych."}</p>
-        ${restRows ? `<div class="day-rest">${restRows}</div>` : ""}
       </div>`;
     }
     const rows = items.map((it) => {
@@ -1839,7 +1852,6 @@
     return `<div class="verdict-urgent">
       <div class="v-head"><span class="v-badge">${items.length}</span><div><h2>Wymaga Twojej uwagi</h2><small>zebrane ${kids.length > 1 ? "z obu dzieci " : ""}${hasOverdue ? "na dziś i zaległe" : "na dziś"}</small></div></div>
       ${rows}
-      ${restRows ? `<div class="day-rest">${restRows}</div>` : ""}
     </div>`;
   }
 
@@ -1877,7 +1889,7 @@
     // żeby nie pokazywać tego samego zadania drugi raz na tej samej stronie.
     const dueCount = todoItems(d).filter((t) => !doneNow.has(t.id) && t.due && t.due > today).length;
     const allTasksCard = `<details class="card t-hw"><summary>${icon("check")} Zadania${dueCount ? ` <span class="sub">· ${dueCount} nadchodzących</span>` : ""}</summary>${viewTodo(d, ["Po terminie", "Dziś"])}</details>`;
-    return `${searchCard(d)}${dayHero(d)}${pulpitSwitcher(d)}${sunday ? week : ""}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}${allTasksCard}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
+    return `${searchCard(d)}${dayHero(d)}${pulpitSwitcher(d)}${todayEventsCard(d)}${todayPlanCard(d)}${sunday ? week : ""}${dayCard(d, shiftISO(today, 1), "Jutro")}${sunday ? "" : week}${allTasksCard}<h2 class="sec">Dzieci</h2>${tiles}${evCard}
       <p class="empty" style="text-align:center;font-size:0.75rem;margin-top:16px">Wersja z ${BUILD_DISPLAY}</p>`;
   }
 
