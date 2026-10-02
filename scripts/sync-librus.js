@@ -768,21 +768,23 @@ const clean = (v) => JSON.parse(JSON.stringify(v ?? null));
 // jedną komórkę z wartością (np. lekcja dzielona na dwie klasy), wszystko po nim się przesuwa i
 // pole "Opis" dostaje wartość z zupełnie innego wiersza. Dlatego parsujemy to sami, wiersz po
 // wierszu — odporne na taką nieregularność.
+let examDiagLogged = false; // TYMCZASOWE: usunąć po ustaleniu prawdziwej struktury strony
 async function fetchEventDescription(client, id) {
   const html = await client.caller.get(`https://synergia.librus.pl/terminarz/szczegoly/${id}`).then((r) => r.data);
   const $ = cheerio.load(html);
   const table = $("table.decorated.medium.center tbody").first();
   let desc = "";
+  const rows = [];
   table.find("tr").each((_, tr) => {
     const label = $(tr).find("th").first().text().trim();
-    if (label !== "Opis") return;
-    desc = $(tr)
-      .find("td")
-      .map((__, td) => $(td).text().trim())
-      .get()
-      .filter(Boolean)
-      .join(" ");
+    const tds = $(tr).find("td").map((__, td) => $(td).text().trim()).get();
+    rows.push({ label, tds });
+    if (label === "Opis") desc = tds.filter(Boolean).join(" ");
   });
+  if (!examDiagLogged) {
+    examDiagLogged = true;
+    console.log(`  [diagnostyka opisu] id ${id} | tabel na stronie z tą klasą: ${$("table.decorated.medium.center").length} | wiersze: ${JSON.stringify(rows)}`);
+  }
   return cleanText(desc, 600);
 }
 
@@ -1011,6 +1013,8 @@ async function syncChild(child, attachmentCache, previousRemarks = []) {
   // (patrz examDescriptions — pobrane bezpośrednio, bez AI), to NADPISUJE to, co ewentualnie
   // zgadł Gemini z tekstu wiadomości — pewne źródło wygrywa z niepewnym.
   if (raw.examDescriptions?.size) {
+    console.log(`  [diagnostyka dopasowania] klucze z terminarza: ${JSON.stringify([...raw.examDescriptions.keys()])}`);
+    console.log(`  [diagnostyka dopasowania] wydarzenia od Gemini: ${JSON.stringify(ai.sections.events.map((e) => `${e.date}|${e.title}`))}`);
     for (const ev of ai.sections.events) {
       const desc = raw.examDescriptions.get(`${ev.date}|${ev.title}`);
       if (desc) ev.sourceNote = desc;
