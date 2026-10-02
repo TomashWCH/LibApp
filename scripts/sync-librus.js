@@ -309,9 +309,8 @@ function parseTimetable(res, mondayISO) {
 }
 
 // ---------- Pełna treść wiadomości (żeby czytać je w appce, bez przełączania do Librusa) ----------
-// Rozpoznanie sprawdzianu/kartkówki po tytule w terminarzu — ten sam wzorzec co w appce
-// (examLabel w index.html), żeby oba miejsca zgadzały się co do tego, co jest "sprawdzianem".
-const EXAM_RE = /kartk|sprawdzian|klasówk|\btest\b|egzamin|dyktando/i;
+// Rozpoznanie sprawdzianu/kartkówki po tytule w terminarzu — używa tego samego EXAM_RE,
+// które jest już zdefiniowane niżej (przegląd tygodnia), żeby nie trzymać dwóch wzorców.
 // Ile szczegółów pojedynczych wpisów terminarza (z polem "Opis") pobieramy max w jednej
 // synchronizacji — to osobne zapytanie na KAŻDY wpis, więc ograniczamy do sprawdzianów
 // i rozsądnej liczby, żeby nie wydłużać synchronizacji bez potrzeby.
