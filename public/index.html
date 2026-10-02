@@ -185,7 +185,8 @@
   .ev-note > summary::before { content: "▸ "; }
   .ev-note[open] > summary::before { content: "▾ "; }
   .ev-note p { margin: 6px 0 0; font-size: 0.88rem; color: var(--ink); background: var(--bg); border-radius: 10px; padding: 8px 10px; }
-  .ev-note-fixed { margin: 6px 0 0; font-size: 0.88rem; color: var(--ink); background: var(--err-soft); border-radius: 10px; padding: 8px 10px; }
+  .ev-note-exam > summary { color: var(--err); }
+  .ev-note-exam p { background: var(--err-soft); }
   .add:disabled { opacity: 0.6; cursor: default; }
   .added { color: var(--ok); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
@@ -644,7 +645,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-02 · 35"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-02 · 36"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -796,19 +797,18 @@
     const dl = daysLabel(ev.date);
     const note = (ev.sourceNote || "").trim();
     const isExam = !!examLabel(ev.title);
-    // Przy sprawdzianie/kartkówce zakres materiału to najważniejsza informacja — pokazujemy go
-    // ZAWSZE jako widoczny akapit, niezależnie od długości (krótki "Rozdziały 3-5" ginął wcześniej
-    // jako mały dopisek przy dacie). Przy innych wydarzeniach zostaje jak było: krótka notatka
-    // (np. "WhatsApp") w linii, dłuższa — pod rozwijanym "Zakres / treść zapowiedzi".
+    // Przy sprawdzianie/kartkówce zakres materiału jest teraz rzetelny (prosto z Librusa), więc
+    // wraca pod rozwijanie jak reszta — osobny, wyraźniejszy wygląd (czerwonawy), żeby nadal
+    // było widać, że to coś ważniejszego niż zwykła notatka. Krótkie inne notatki (np. "WhatsApp")
+    // zostają w linii.
     const shortNote = !isExam && note && note.length <= 40 ? note : null;
-    const longNote = !isExam && note && note.length > 40 ? note : null;
+    const longNote = note && (isExam || note.length > 40) ? note : null;
     return `<li>
       ${dl ? `<span class="daysleft">${esc(dl)}</span>` : ""}
       <div class="main">
         <b>${esc(ev.title)}${isExam ? ` <span class="chip neg">${examLabel(ev.title)}</span>` : ""}</b>
         <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${shortNote ? " · " + esc(shortNote) : ""}</small>
-        ${isExam && note ? `<p class="ev-note-fixed">${esc(note)}</p>` : ""}
-        ${longNote ? `<details class="ev-note"><summary>Zakres / treść zapowiedzi</summary><p>${esc(longNote)}</p></details>` : ""}
+        ${longNote ? `<details class="ev-note${isExam ? " ev-note-exam" : ""}"><summary>Zakres / treść zapowiedzi</summary><p>${esc(longNote)}</p></details>` : ""}
       </div>
       ${added ? `<span class="added">${icon("check")} Dodano</span>` : canAdd ? `<button class="add" data-add="${id}">${icon("calplus")} Dodaj</button>` : ""}
     </li>`;
