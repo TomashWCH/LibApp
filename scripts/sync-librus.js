@@ -768,24 +768,25 @@ const clean = (v) => JSON.parse(JSON.stringify(v ?? null));
 // jedną komórkę z wartością (np. lekcja dzielona na dwie klasy), wszystko po nim się przesuwa i
 // pole "Opis" dostaje wartość z zupełnie innego wiersza. Dlatego parsujemy to sami, wiersz po
 // wierszu — odporne na taką nieregularność.
-let examDiagLogged = false; // TYMCZASOWE: usunąć po ustaleniu prawdziwej struktury strony
+// Zwraca {description, subject, kind} ze szczegółów wpisu terminarza. Przedmiot i rodzaj
+// pobieramy stąd TEŻ bezpośrednio (nie tylko opis) — tytuł ze zbiorczej listy kalendarza
+// bywa bałaganem ("Nr lekcji: 5 Język niemiecki, kartkówka 5c SP"), więc budujemy czysty
+// tytuł sami, zamiast próbować dopasować to do tego, co osobno wymyśli Gemini.
 async function fetchEventDescription(client, id) {
   const html = await client.caller.get(`https://synergia.librus.pl/terminarz/szczegoly/${id}`).then((r) => r.data);
   const $ = cheerio.load(html);
   const table = $("table.decorated.medium.center tbody").first();
-  let desc = "";
-  const rows = [];
+  const byLabel = {};
   table.find("tr").each((_, tr) => {
     const label = $(tr).find("th").first().text().trim();
-    const tds = $(tr).find("td").map((__, td) => $(td).text().trim()).get();
-    rows.push({ label, tds });
-    if (label === "Opis") desc = tds.filter(Boolean).join(" ");
+    const val = $(tr).find("td").map((__, td) => $(td).text().trim()).get().filter(Boolean).join(" ");
+    if (label) byLabel[label] = val;
   });
-  if (!examDiagLogged) {
-    examDiagLogged = true;
-    console.log(`  [diagnostyka opisu] id ${id} | tabel na stronie z tą klasą: ${$("table.decorated.medium.center").length} | wiersze: ${JSON.stringify(rows)}`);
-  }
-  return cleanText(desc, 600);
+  return {
+    description: cleanText(byLabel["Opis"], 600),
+    subject: cleanText(byLabel["Przedmiot"], 90),
+    kind: cleanText(byLabel["Rodzaj"], 40),
+  };
 }
 
 async function fetchLibrusData(login, password, today, since, until, attachmentCache) {
@@ -872,16 +873,20 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     .filter((e) => Number.isFinite(e.id) && e.id > 0 && EXAM_RE.test(e.title || ""))
     .filter((e) => { const dd = normalizeDay(e.day); return dd && dd >= today && dd <= until; })
     .slice(0, EXAM_DETAIL_LIMIT);
-  const examDescriptions = new Map(); // "data|tytuł" -> opis
+  // Pełne, gotowe wydarzenia sprawdzianów/kartkówek — zbudowane wprost z tego, co pobraliśmy,
+  // nie z zestawienia kalendarza (jego "tytuł" bywa nieczytelnym zlepkiem pól) ani przez próbę
+  // dopasowania do tego, co osobno wygeneruje Gemini (tytuły się nie zgadzały — stąd zgubiony opis).
+  const examEventsBuilt = [];
   if (examEntries.length) {
     const results = await Promise.allSettled(examEntries.map((e) => fetchEventDescription(client, e.id)));
     examEntries.forEach((e, i) => {
       const r = results[i];
-      const desc = r.status === "fulfilled" ? r.value : "";
-      if (desc) examDescriptions.set(`${normalizeDay(e.day)}|${cleanText(e.title, 90)}`, desc);
-      else if (r.status === "rejected") console.warn(`  ! szczegóły terminarza (id ${e.id}): ${r.reason?.message || r.reason}`);
+      if (r.status === "rejected") { console.warn(`  ! szczegóły terminarza (id ${e.id}): ${r.reason?.message || r.reason}`); return; }
+      const { description, subject, kind } = r.value;
+      const title = [subject, kind || "sprawdzian"].filter(Boolean).join(", ") || cleanText(e.title, 90);
+      examEventsBuilt.push({ date: normalizeDay(e.day), time: null, title, sourceNote: description });
     });
-    console.log(`  terminarz: sprawdzianów do sprawdzenia ${examEntries.length}, z opisem ${examDescriptions.size}`);
+    console.log(`  terminarz: sprawdzianów do sprawdzenia ${examEntries.length}, zbudowanych ${examEventsBuilt.length} (z opisem ${examEventsBuilt.filter((x) => x.sourceNote).length})`);
   }
 
   if (
@@ -952,7 +957,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
   for (const g of extra.gradeList) if (g.base == null) letters[g.value] = (letters[g.value] || 0) + 1;
   console.log(`  oceny: biblioteka ${asArray(subjects).reduce((n, s) => n + asArray(s?.semester).reduce((m, x) => m + asArray(x?.grades).length, 0), 0)}, wszystkie pola ${asArray(gradeBoxes).length}, razem ${extra.gradeList.length}; bez cyfry: ${Object.entries(letters).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"}`);
 
-  return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst, extra, examDescriptions };
+  return { grades, terminarz, wiadomosci, ogloszenia, uwagiTekst, extra, examEventsBuilt };
 }
 
 // ---------- Synchronizacja ----------
@@ -1009,16 +1014,14 @@ async function syncChild(child, attachmentCache, previousRemarks = []) {
   console.log(`[${child.name}] uwagi: nowo zgłoszone przez Gemini ${ai.sections.remarksAll.length}, łącznie po scaleniu ${raw.extra.remarkList.length}`);
   delete ai.sections.remarksAll; // już przeniesione do extra.remarkList — nie dublujemy w bazie
 
-  // Zakres materiału na sprawdzian/kartkówkę: jeśli mamy go wprost z pola "Opis" w terminarzu
-  // (patrz examDescriptions — pobrane bezpośrednio, bez AI), to NADPISUJE to, co ewentualnie
-  // zgadł Gemini z tekstu wiadomości — pewne źródło wygrywa z niepewnym.
-  if (raw.examDescriptions?.size) {
-    console.log(`  [diagnostyka dopasowania] klucze z terminarza: ${JSON.stringify([...raw.examDescriptions.keys()])}`);
-    console.log(`  [diagnostyka dopasowania] wydarzenia od Gemini: ${JSON.stringify(ai.sections.events.map((e) => `${e.date}|${e.title}`))}`);
-    for (const ev of ai.sections.events) {
-      const desc = raw.examDescriptions.get(`${ev.date}|${ev.title}`);
-      if (desc) ev.sourceNote = desc;
-    }
+  // Sprawdziany/kartkówki: zastępujemy to, co na ten dzień ewentualnie zgadło Gemini (z tytułem
+  // bywającym bałaganem i bez pewnego zakresu materiału) naszą wersją zbudowaną wprost z Librusa —
+  // dopasowanie po tytule zawodziło (Gemini formułuje tytuł inaczej niż zbiorcza lista kalendarza),
+  // więc zamiast dopasowywać, po prostu podmieniamy po dacie.
+  if (raw.examEventsBuilt?.length) {
+    const examDates = new Set(raw.examEventsBuilt.map((e) => e.date));
+    ai.sections.events = ai.sections.events.filter((ev) => !(examDates.has(ev.date) && EXAM_RE.test(ev.title || "")));
+    ai.sections.events.push(...raw.examEventsBuilt);
   }
 
   return { ...ai, extra: raw.extra };
