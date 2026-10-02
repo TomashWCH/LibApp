@@ -617,7 +617,6 @@ async function loadLookups(client) {
 const personName = (p) => cleanText([p?.FirstName, p?.LastName].filter(Boolean).join(" "), 40);
 
 // Wynik Timetables?weekStart=... -> [{ date, lessons: [{ nr, time, title, teacher, room, flag }] }]
-let roomDiagLogged = false; // TYMCZASOWE: usunąć po ustaleniu, czy Librus w ogóle przesyła salę
 function parseApiTimetable(json, lookups = {}) {
   const tt = json?.Timetable ?? {};
   const days = [];
@@ -630,10 +629,6 @@ function parseApiTimetable(json, lookups = {}) {
         const subj = e.Subject?.Name ? e.Subject : lookups.subjects?.[String(e.Subject?.Id)] ?? e.Subject ?? {};
         const teacher = e.Teacher?.LastName ? e.Teacher : lookups.users?.[String(e.Teacher?.Id)] ?? e.Teacher ?? {};
         const room = e.Classroom?.Name ?? e.Classroom?.Symbol ?? lookups.classrooms?.[String(e.Classroom?.Id)]?.Name ?? lookups.classrooms?.[String(e.Classroom?.Id)]?.Symbol ?? "";
-        if (!roomDiagLogged) {
-          roomDiagLogged = true;
-          console.log(`  [diagnostyka sali] Classroom w odpowiedzi Librusa: ${JSON.stringify(e.Classroom)} | lookups.classrooms ma wpisów: ${Object.keys(lookups.classrooms || {}).length} | wszystkie klucze lekcji: ${Object.keys(e).join(", ")}`);
-        }
         const title = cleanText(subj.Name || e.OrgSubject?.Name || subj.Short || "", 90);
         if (!title && !e.LessonNo) continue;
         const from = hhmm(e.HourFrom), to = hhmm(e.HourTo);
@@ -662,8 +657,11 @@ async function fetchTimetableApi(client, mondayISO, state) {
     const entry = asArray(firstDay).flat()[0];
     console.log(`  plan (API): klucze odpowiedzi: ${Object.keys(json ?? {}).join(",") || "brak"}; wpis: ${entry ? Object.keys(entry).join(",") : "brak wpisów"}`);
   }
+  // UWAGA: trzeba sprawdzić WSZYSTKIE pola, które mogą przyjść jako samo id/url bez nazwy
+  // (przedmiot, nauczyciel, sala) — wcześniej sprawdzano tylko przedmiot, więc gdy ten akurat
+  // przychodził z nazwą, appka nigdy nie dociągała słownika sal, nawet gdy sala go wymagała.
   const needLookups = Object.values(json?.Timetable ?? {}).some((day) =>
-    asArray(day).flat().some((e) => e?.Subject && !e.Subject.Name)
+    asArray(day).flat().some((e) => (e?.Subject && !e.Subject.Name) || (e?.Teacher && !e.Teacher.LastName) || (e?.Classroom && !e.Classroom.Name && !e.Classroom.Symbol))
   );
   if (needLookups && !state.lookups) state.lookups = await loadLookups(client);
   return parseApiTimetable(json, state.lookups ?? {});
