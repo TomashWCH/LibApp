@@ -187,6 +187,14 @@
   .ev-note p { margin: 6px 0 0; font-size: 0.88rem; color: var(--ink); background: var(--bg); border-radius: 10px; padding: 8px 10px; }
   .ev-note-exam > summary { color: var(--err); }
   .ev-note-exam p { background: var(--err-soft); }
+  .study-note { margin-top: 6px; }
+  .study-note > summary { color: var(--accent); }
+  .study-body { margin: 6px 0 0; font-size: 0.88rem; background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+  .study-body b { display: block; font-size: 0.78rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin: 10px 0 4px; }
+  .study-body b:first-child { margin-top: 0; }
+  .study-body ul, .study-body ol { margin: 0; padding-left: 20px; }
+  .study-body li { margin: 3px 0; }
+  .study-disclaimer { margin: 10px 0 0; font-size: 0.74rem; color: var(--muted); font-style: italic; }
   .add:disabled { opacity: 0.6; cursor: default; }
   .added { color: var(--ok); font-size: 0.8rem; font-weight: 600; white-space: nowrap; }
 
@@ -645,7 +653,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-02 · 36"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-03 · 37"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -809,9 +817,25 @@
         <b>${esc(ev.title)}${isExam ? ` <span class="chip neg">${examLabel(ev.title)}</span>` : ""}</b>
         <small>${showTag ? `<span class="tag c${child.idx}">${esc(child.name)}</span>` : ""}${fmtDate(ev.date)}${ev.time ? " · " + esc(ev.time) : ""}${shortNote ? " · " + esc(shortNote) : ""}</small>
         ${longNote ? `<details class="ev-note${isExam ? " ev-note-exam" : ""}"><summary>Zakres / treść zapowiedzi</summary><p>${esc(longNote)}</p></details>` : ""}
+        ${isExam && (ev.studyMaterial?.keyPoints?.length || ev.studyMaterial?.questions?.length) ? studyMaterialBlock(ev.studyMaterial) : ""}
       </div>
       ${added ? `<span class="added">${icon("check")} Dodano</span>` : canAdd ? `<button class="add" data-add="${id}">${icon("calplus")} Dodaj</button>` : ""}
     </li>`;
+  }
+
+  // Materiał do nauki od Gemini (kluczowe punkty + pytania kontrolne) — zawsze z wyraźnym
+  // zastrzeżeniem, że to ogólna wiedza AI, nie treść konkretnego podręcznika.
+  function studyMaterialBlock(m) {
+    const points = arr(m.keyPoints);
+    const questions = arr(m.questions);
+    return `<details class="ev-note study-note">
+      <summary>${icon("book")} Materiał do nauki</summary>
+      <div class="study-body">
+        ${points.length ? `<b>Kluczowe punkty</b><ul>${points.map((p) => `<li>${esc(p)}</li>`).join("")}</ul>` : ""}
+        ${questions.length ? `<b>Pytania kontrolne</b><ol>${questions.map((q) => `<li>${esc(q)}</li>`).join("")}</ol>` : ""}
+        <p class="study-disclaimer">Wygenerowane przez AI na podstawie ogólnej wiedzy o temacie — nie zastępuje podręcznika ani materiałów od nauczyciela.</p>
+      </div>
+    </details>`;
   }
 
   function syncLine(d) {
