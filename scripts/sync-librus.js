@@ -321,6 +321,7 @@ const MESSAGE_BODY_CONCURRENCY = 3;
 
 // ---------- Załączniki PDF: pobranie i streszczenie przez Gemini (z pamięcią wyników) ----------
 const PDF_NEW_LIMIT = 3; // ile NOWYCH załączników max analizujemy w jednej synchronizacji (biblioteka do Librusa bywa tu wolna/kapryśna)
+const STUDY_MATERIAL_NEW_LIMIT = 5; // ile NOWYCH materiałów do nauki generujemy max w jednej synchronizacji — raz wygenerowany zapamiętujemy na stałe, więc to tylko koszt pierwszego pojawienia się sprawdzianu
 const PDF_MAX_BYTES = 15 * 1024 * 1024; // limit wielkości pliku wysyłanego do Gemini
 const PDF_TIMEOUT_MS = 25000; // twardy limit czasu na pobranie JEDNEGO załącznika — nie blokujemy reszty synchronizacji
 
@@ -884,7 +885,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
       if (r.status === "rejected") { console.warn(`  ! szczegóły terminarza (id ${e.id}): ${r.reason?.message || r.reason}`); return; }
       const { description, subject, kind } = r.value;
       const title = [subject, kind || "sprawdzian"].filter(Boolean).join(", ") || cleanText(e.title, 90);
-      examEventsBuilt.push({ date: normalizeDay(e.day), time: null, title, sourceNote: description });
+      examEventsBuilt.push({ date: normalizeDay(e.day), time: null, title, sourceNote: description, examId: e.id });
     });
     console.log(`  terminarz: sprawdzianów do sprawdzenia ${examEntries.length}, zbudowanych ${examEventsBuilt.length} (z opisem ${examEventsBuilt.filter((x) => x.sourceNote).length})`);
   }
@@ -962,7 +963,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
 
 // ---------- Synchronizacja ----------
 // Pobiera i streszcza dane jednego dziecka.
-async function syncChild(child, attachmentCache, previousRemarks = []) {
+async function syncChild(child, attachmentCache, previousRemarks = [], previousStudyMaterial = []) {
   const loginEnv = `LIBRUS_LOGIN_${child.secretSuffix}`;
   const passEnv = `LIBRUS_PASSWORD_${child.secretSuffix}`;
   const login = process.env[loginEnv];
@@ -1024,6 +1025,38 @@ async function syncChild(child, attachmentCache, previousRemarks = []) {
     ai.sections.events.push(...raw.examEventsBuilt);
   }
 
+  // Materiał do nauki: raz wygenerowany dla danego sprawdzianu (po jego stałym id) zostaje
+  // zapamiętany na stałe i tylko dokładany ponownie — generujemy NOWY tylko dla sprawdzianów,
+  // których jeszcze nie było, i tylko do limitu na tę jedną synchronizację.
+  const prevStudyById = new Map(previousStudyMaterial.filter((m) => m?.id != null).map((m) => [m.id, m]));
+  const studyMaterialOut = [];
+  let newStudyCount = 0;
+  for (const ev of raw.examEventsBuilt || []) {
+    if (ev.examId == null) continue;
+    const cached = prevStudyById.get(ev.examId);
+    if (cached) {
+      ev.studyMaterial = { keyPoints: cached.keyPoints, questions: cached.questions };
+      studyMaterialOut.push(cached);
+    } else if (ev.sourceNote && newStudyCount < STUDY_MATERIAL_NEW_LIMIT) {
+      try {
+        const [subject, kind] = ev.title.split(", ");
+        const material = await generateStudyMaterial(child.name, subject, kind, ev.sourceNote);
+        if (material.keyPoints.length || material.questions.length) {
+          ev.studyMaterial = material;
+          studyMaterialOut.push({ id: ev.examId, date: ev.date, ...material });
+          newStudyCount++;
+        }
+      } catch (err) {
+        console.warn(`  ! materiał do nauki (${ev.title}): ${err.message}`);
+      }
+    }
+    delete ev.examId; // pomocnicze tylko tutaj — nie trzeba tego zapisywać do appki
+  }
+  if (studyMaterialOut.length) {
+    raw.extra.studyMaterial = studyMaterialOut;
+    console.log(`[${child.name}] materiał do nauki: nowo wygenerowany ${newStudyCount}, łącznie ${studyMaterialOut.length}`);
+  }
+
   return { ...ai, extra: raw.extra };
 }
 
@@ -1051,6 +1084,45 @@ function buildWeeklyStats(results, today) {
         innychTerminowPrzedNami: upcoming.length - exams.length,
       };
     });
+}
+
+// Materiał do nauki (kluczowe punkty + pytania kontrolne) do konkretnego sprawdzianu/kartkówki.
+// UWAGA: appka nie ma dostępu do treści podręcznika — Gemini opiera to na swojej ogólnej wiedzy
+// o temacie, nie na dokładnej stronie/rozdziale. To pomoc poglądowa, nie zamiennik podręcznika —
+// appka pokazuje to z wyraźnym zastrzeżeniem (patrz index.html).
+async function generateStudyMaterial(childName, subject, kind, description) {
+  const prompt = `
+Jesteś pomocnym korepetytorem przygotowującym ucznia (imię: ${childName}) do ${kind || "sprawdzianu"}
+z przedmiotu: ${subject || "nieznany"}.
+Zakres, jaki podał nauczyciel: "${description}".
+
+Nie masz dostępu do podręcznika ucznia — oprzyj się na swojej ogólnej wiedzy o tym temacie,
+dopasowanej do wieku szkolnego sugerowanego przez nazwę przedmiotu i zakres. Jeśli zakres jest
+zbyt ogólny, żeby cokolwiek z niego wywnioskować (np. tylko numer strony bez tematu), zwróć
+puste listy.
+
+Odpowiedz WYŁĄCZNIE poprawnym JSON-em PO POLSKU:
+{"keyPoints": string[], "questions": string[]}
+- "keyPoints": 4-7 krótkich, konkretnych punktów do zapamiętania (nie całe akapity)
+- "questions": 3-5 pytań kontrolnych, na które uczeń powinien umieć odpowiedzieć
+`.trim();
+
+  let data;
+  try {
+    data = await callGemini(GEMINI_MODEL, prompt);
+  } catch (err) {
+    const canFallback = GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== GEMINI_MODEL && RETRY_STATUS.has(err.status);
+    if (!canFallback) throw err;
+    data = await callGemini(GEMINI_FALLBACK_MODEL, prompt);
+  }
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Pusta odpowiedź z Gemini (materiał do nauki)");
+  const cleaned = text.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  const parsed = JSON.parse(cleaned);
+  return {
+    keyPoints: asArray(parsed?.keyPoints).map((x) => cleanText(x, 200)).filter(Boolean).slice(0, 7),
+    questions: asArray(parsed?.questions).map((x) => cleanText(x, 200)).filter(Boolean).slice(0, 5),
+  };
 }
 
 async function generateWeeklyReview(userDocRef, results, today) {
@@ -1153,11 +1225,14 @@ async function syncUser(user) {
   // nadpisywane), żeby raz zauważona uwaga nigdy nie zniknęła, nawet jeśli z czasem wypadnie
   // poza to, co Librus obecnie pokazuje w skrzynce.
   const getPreviousRemarks = (secretSuffix) => asArray(previousChildren[secretSuffix]?.extra?.remarkList);
+  // Materiał do nauki wygenerowany wcześniej dla danego sprawdzianu (po jego stałym id z Librusa) —
+  // nie generujemy go drugi raz, tylko dokładamy do każdego dnia, aż wydarzenie zniknie z terminarza.
+  const getPreviousStudyMaterial = (secretSuffix) => asArray(previousChildren[secretSuffix]?.extra?.studyMaterial);
 
   const results = [];
   for (const child of children) {
     try {
-      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix), getPreviousRemarks(child.secretSuffix))) });
+      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix), getPreviousRemarks(child.secretSuffix), getPreviousStudyMaterial(child.secretSuffix))) });
     } catch (err) {
       console.error(`[${child.name}] BŁĄD:`, err.message);
       results.push({ child, ok: false, error: err.message });
