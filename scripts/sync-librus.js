@@ -430,7 +430,7 @@ async function fetchMessageBodies(client, wiadomosciZrodlo, attachmentCache = ne
     while (i < candidates.length) {
       const m = candidates[i++];
       try {
-        const full = await client.inbox.getMessage(6, m.id); // 6 = folder "Odebrane"
+        const full = await client.inbox.getMessage(5, m.id); // 5 = folder "Odebrane" (potwierdzone wprost z menu folderów — "6" z biblioteki było błędne, to "Wysłane")
         const files = asArray(full?.files);
         const zalaczniki = [];
         for (const f of files) {
@@ -835,7 +835,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
           safe(`terminarz ${year}-${pad2(month)}`, client.calendar.getCalendar(month, year), [])
         )
       ),
-      safe("wiadomości", client.inbox.listInbox(6), []), // 6 = odebrane
+      safe("wiadomości", client.inbox.listInbox(5), []), // 5 = odebrane (sprawdzone wprost w menu folderów na stronie — nie 6, jak zakładała biblioteka)
       safe(
         "uwagi",
         client.caller.get("https://synergia.librus.pl/uwagi").then((r) => r.data),
@@ -862,31 +862,6 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
       safe("oceny (wszystkie pola)", fetchAllGradeBoxes(client).then((b) => enrichBoxes(client, b)), []),
       safe("frekwencja", client.absence.getAbsences(), {}),
     ]);
-
-  // --- TYMCZASOWA DIAGNOSTYKA (usunąć po ustaleniu prawdziwej przyczyny) ---
-  // client.inbox.listInbox(6) zwraca tylko 5 wiadomości, mimo że na stronie jest ich więcej.
-  // Sprawdzamy surową stronę sami, żeby zobaczyć, ile wierszy naprawdę jest w odpowiedzi HTML
-  // i czy jest tam coś wskazującego na stronicowanie.
-  try {
-    const r = await client.caller.get("https://synergia.librus.pl/wiadomosci/6");
-    const rawHtml = r.data;
-    const $ = cheerio.load(rawHtml);
-    const tables = $("table").map((_, t) => {
-      const cls = $(t).attr("class") || "(bez klasy)";
-      const rows = $(t).find("tbody tr").length || $(t).find("tr").length;
-      return `${cls}=${rows}`;
-    }).get();
-    const links = $("a[href]").map((_, a) => $(a).attr("href")).get()
-      .filter((h) => /stron|page|limit|offset|lp=|ile=/i.test(h))
-      .slice(0, 10);
-    // Prawdziwe numery folderów z bocznego menu (uwagi/odebrane/wysłane/kosz/Archiwum) — sprawdzamy,
-    // czy "6" (założenie biblioteki) naprawdę odpowiada "odebrane" dla tego konta.
-    const folderLinks = $("table.message-folders a[href], .message-folders a[href]").map((_, a) => `${$(a).text().trim()}→${$(a).attr("href")}`).get();
-    console.log(`  [diagnostyka wiadomości] status: ${r.status} | długość HTML: ${rawHtml.length} znaków | tabele (klasa=wiersze): ${JSON.stringify(tables)} | linki ze wzmianką o stronach: ${JSON.stringify(links)} | foldery: ${JSON.stringify(folderLinks)}`);
-  } catch (err) {
-    console.warn(`  ! diagnostyka wiadomości: ${err.message}`);
-  }
-  // --- KONIEC TYMCZASOWEJ DIAGNOSTYKI ---
 
   const calendarAll = [calendarThis, calendarNext]
     .flat(Infinity)
