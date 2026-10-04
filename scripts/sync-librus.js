@@ -142,6 +142,12 @@ function normalizeAi(obj) {
         date: nul(r.date),
         type: nul(r.type),
       })),
+      // Rzeczy do zrobienia/przyniesienia wyłowione z treści wiadomości (nie z tematu) — osobno
+      // od "remarksAll", bo to zupełnie inna kategoria (prośba nauczyciela, nie uwaga o dziecku).
+      todo: asArray(o.todo).map((t) => ({
+        text: str(t.text),
+        due: nul(t.due),
+      })),
       events: asArray(o.events)
         .map((e) => ({
           title: str(e.title),
@@ -208,6 +214,14 @@ Z poniższych danych JSON przygotuj obiekt z polami:
    znajdziesz 3 lub więcej wpisów, jedno krótkie zdanie po polsku opisujące,
    co się powtarza (np. podobny powód, ten sam nauczyciel, częstotliwość).
    W przeciwnym razie null.
+
+8. "todo" — rzeczy, które rodzic/uczeń ma ZROBIĆ, PRZYNIEŚĆ, WPŁACIĆ lub POTWIERDZIĆ,
+   wyłowione z PEŁNEJ TREŚCI wiadomości (pole "tresc" w punkcie "wiadomosci" powyżej —
+   nie tylko temat). Np. "proszę o przygotowanie na poniedziałek: słoik, balon..."
+   to jeden wpis z text="Przygotować: słoik, balon, mąka ziemniaczana" i due=najbliższy
+   poniedziałek licząc od dzisiejszej daty. Jeśli wiadomość nie podaje konkretnego dnia,
+   ustaw due na null.
+   [{"text": string, "due": "YYYY-MM-DD" albo null}]
 
 Puste sekcje zwracaj jako []. Odpowiedz WYŁĄCZNIE poprawnym JSON-em.
 
@@ -965,7 +979,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
 
 // ---------- Synchronizacja ----------
 // Pobiera i streszcza dane jednego dziecka.
-async function syncChild(child, attachmentCache, previousRemarks = [], previousStudyMaterial = [], previousMessages = []) {
+async function syncChild(child, attachmentCache, previousRemarks = [], previousStudyMaterial = [], previousMessages = [], previousMessageTodos = []) {
   const loginEnv = `LIBRUS_LOGIN_${child.secretSuffix}`;
   const passEnv = `LIBRUS_PASSWORD_${child.secretSuffix}`;
   const login = process.env[loginEnv];
@@ -996,12 +1010,22 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
     `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"})`
   );
   const gradeTrends = computeGradeTrends(raw.extra.gradeList, today);
+  // Pełna treść wiadomości (nie tylko temat!) do podsumowania ORAZ wychwycenia próśb typu "proszę
+  // o przygotowanie na poniedziałek...". Do podsumowania bierzemy świeże (ostatnie NEW_DAYS dni) —
+  // stare i tak już są "stare". Ale do wychwytywania próśb bierzemy KAŻDĄ wiadomość, która jeszcze
+  // nigdy nie trafiła do Gemini (oznaczana na stałe "scannedByAi"), niezależnie od wieku — inaczej
+  // wiadomość, która z jakiegokolwiek powodu (np. dawny błąd z folderem) stała się appce widoczna
+  // później niż tydzień od wysłania, nigdy nie zostałaby przez Gemini w ogóle przeczytana.
+  const allMsgs = asArray(raw.extra.messages);
+  const msgsForAi = allMsgs.filter((m) => (m.data || "9999") >= since || !m.scannedByAi);
+  const wiadomosciZTrescia = msgsForAi
+    .map((m) => ({ od: m.od, temat: m.temat, data: m.data, nieprzeczytana: m.nieprzeczytana, tresc: cleanText(m.tresc, 1200) }));
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
   const ai = await summarizeWithGemini(
     {
       oceny: raw.grades,
       terminarz: raw.terminarz,
-      wiadomosci: raw.wiadomosci,
+      wiadomosci: wiadomosciZTrescia,
       ogloszenia: raw.ogloszenia,
       uwagi_tekst: raw.uwagiTekst,
     },
@@ -1010,6 +1034,8 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
     since,
     gradeTrends
   );
+  const scannedIds = new Set(msgsForAi.map((m) => m.id));
+  for (const m of allMsgs) if (scannedIds.has(m.id)) m.scannedByAi = true;
 
   // Pełna historia uwag: Gemini zgłasza WSZYSTKIE znalezione na stronie "uwagi_tekst" (punkt 3b
   // w promptcie, bez ograniczenia do "since"). Brak naturalnego id (to nie wiadomość z własnym
@@ -1025,6 +1051,21 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
   raw.extra.remarkList = [...mergedRemarks.values()].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
   console.log(`[${child.name}] uwagi: nowo zgłoszone przez Gemini ${ai.sections.remarksAll.length}, łącznie po scaleniu ${raw.extra.remarkList.length}`);
   delete ai.sections.remarksAll; // już przeniesione do extra.remarkList — nie dublujemy w bazie
+
+  // Rzeczy do zrobienia z treści wiadomości: scalamy z poprzednio znalezionymi (po stabilnym
+  // kluczu z treści — Gemini nie daje nam id wiadomości źródłowej, więc dedupujemy po tekście),
+  // żeby ta sama prośba nie pojawiła się dwa razy i żeby nie zniknęła, gdy źródłowa wiadomość
+  // z czasem wypadnie poza okno, jakie dostaje Gemini.
+  const todoKey = (t) => createHash("md5").update(`${t.text || ""}|${t.due || ""}`).digest("hex").slice(0, 16);
+  const mergedMsgTodos = new Map();
+  for (const t of previousMessageTodos) if (t?.id != null) mergedMsgTodos.set(t.id, t);
+  for (const t of ai.sections.todo) {
+    const id = todoKey(t);
+    mergedMsgTodos.set(id, { id, text: t.text, due: t.due });
+  }
+  raw.extra.messageTodos = [...mergedMsgTodos.values()];
+  if (ai.sections.todo.length) console.log(`[${child.name}] z wiadomości do zrobienia: nowo zgłoszone ${ai.sections.todo.length}, łącznie ${raw.extra.messageTodos.length}`);
+  delete ai.sections.todo; // już przeniesione do extra.messageTodos
 
   // Sprawdziany/kartkówki: zastępujemy to, co na ten dzień ewentualnie zgadło Gemini (z tytułem
   // bywającym bałaganem i bez pewnego zakresu materiału) naszą wersją zbudowaną wprost z Librusa —
@@ -1243,11 +1284,15 @@ async function syncUser(user) {
   // tylko nieprzeczytane LUB nowsze niż tydzień. Bez pamięci wiadomość, którą appka właśnie
   // pokazała, za tydzień wypadnie z tego okna i zniknie, mimo że wciąż jest na Librusie.
   const getPreviousMessages = (secretSuffix) => asArray(previousChildren[secretSuffix]?.extra?.messages);
+  // Rzeczy do zrobienia wyłowione wcześniej z treści wiadomości (np. "przynieś słoik na
+  // poniedziałek") — pamiętamy je, żeby nie zniknęły, gdy źródłowa wiadomość wypadnie
+  // z okna, jakie appka pokazuje Gemini przy kolejnej synchronizacji.
+  const getPreviousMessageTodos = (secretSuffix) => asArray(previousChildren[secretSuffix]?.extra?.messageTodos);
 
   const results = [];
   for (const child of children) {
     try {
-      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix), getPreviousRemarks(child.secretSuffix), getPreviousStudyMaterial(child.secretSuffix), getPreviousMessages(child.secretSuffix))) });
+      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix), getPreviousRemarks(child.secretSuffix), getPreviousStudyMaterial(child.secretSuffix), getPreviousMessages(child.secretSuffix), getPreviousMessageTodos(child.secretSuffix))) });
     } catch (err) {
       console.error(`[${child.name}] BŁĄD:`, err.message);
       results.push({ child, ok: false, error: err.message });
