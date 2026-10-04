@@ -655,7 +655,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-04 · 38"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-04 · 39"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -876,6 +876,7 @@
       for (const h of arr(k.extra?.homework)) add("Zadania domowe", k.name, h.to || h.date, null, h.subject, `${h.subject ? h.subject + ": " : ""}${h.title || ""}`);
       const msgs = Array.isArray(k.extra?.messages) ? k.extra.messages : arr(k.sections?.messages);
       for (const m of msgs) add("Wiadomości", k.name, m.data || m.date, null, m.temat || m.subject, `${m.temat || m.subject || ""}${m.tresc ? ` — ${m.tresc}` : ""}${m.od || m.from ? ` (${m.od || m.from})` : ""}`);
+      for (const t of arr(k.extra?.messageTodos)) add("Zadania", k.name, t.due, null, "Z wiadomości", t.text);
       const wa = d?.whatsapp?.summaries?.[k.key];
       if (wa) {
         for (const en of arr(wa.entries)) {
@@ -1403,6 +1404,9 @@
             id: "t" + cyrb53(`${t.text}|${t.due || ""}`).toString(32), text: t.text, due: isoDate.test(t.due || "") ? t.due : null,
           }));
       for (const t of fromWa) items.push({ id: `${k.key}:${t.id}`, kind: "wa", text: t.text, due: t.due || null, k });
+      for (const t of arr(k.extra?.messageTodos)) {
+        items.push({ id: `${k.key}:msg:${t.id || cyrb53(`${t.text}|${t.due || ""}`).toString(32)}`, kind: "msg", text: t.text, due: isoDate.test(t.due || "") ? t.due : null, k });
+      }
       for (const h of arr(k.extra?.homework)) {
         items.push({
           id: `${k.key}:hw:${cyrb53(`${h.subject}|${h.title}|${h.to}`).toString(32)}`,
@@ -1418,7 +1422,7 @@
 
   function todoRow(t, isDone, overdue) {
     const isManual = t.kind === "manual";
-    const kindLabel = t.kind === "hw" ? "zadanie domowe" : t.kind === "wa" ? "WhatsApp" : "dodane ręcznie";
+    const kindLabel = t.kind === "hw" ? "zadanie domowe" : t.kind === "wa" ? "WhatsApp" : t.kind === "msg" ? "z wiadomości" : "dodane ręcznie";
     return `<li>
       <button class="check${isManual ? "" : ` c${t.k.idx}`}" data-done="${esc(t.id)}" aria-label="${isDone ? "Cofnij" : "Oznacz jako zrobione"}">${icon(isDone ? "checkfill" : "circle")}</button>
       <div class="main"><b>${isDone ? `<s>${esc(t.text)}</s>` : esc(t.text)}</b>
