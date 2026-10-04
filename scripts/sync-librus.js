@@ -923,9 +923,11 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     .sort((a, b) => a.data.localeCompare(b.data))
     .slice(0, 120);
 
-  const wiadomosciZrodlo = asArray(inbox)
-    .filter((m) => !m.read || (normalizeDay(m.date) ?? "9999") >= since)
-    .slice(0, 30);
+  // Wcześniej appka pomijała wiadomości, które były JEDNOCZEŚNIE przeczytane i starsze niż tydzień —
+  // to wykluczało m.in. wiadomości przeczytane wprost na Librusie (nie przez appkę). Skoro appka ma
+  // już trwałą pamięć wiadomości (patrz syncChild), bierzemy teraz po prostu najnowsze ze skrzynki,
+  // niezależnie od tego, czy ktoś je już przeczytał na Librusie.
+  const wiadomosciZrodlo = asArray(inbox).slice(0, 30);
   const wiadomosci = wiadomosciZrodlo.map((m) => ({ od: m.user, temat: m.title, data: m.date, nieprzeczytana: !m.read }));
 
   const ogloszenia = asArray(announcements)
