@@ -220,21 +220,6 @@ Z poniższych danych JSON przygotuj obiekt z polami:
    co się powtarza (np. podobny powód, ten sam nauczyciel, częstotliwość).
    W przeciwnym razie null.
 
-8. "todo" — rzeczy, które rodzic/uczeń ma ZROBIĆ, PRZYNIEŚĆ, WPŁACIĆ lub POTWIERDZIĆ,
-   wyłowione z PEŁNEJ TREŚCI wiadomości (pole "tresc" w punkcie "wiadomosci" powyżej —
-   nie tylko temat).
-   WAŻNE: przejrzyj KAŻDĄ wiadomość z listy "wiadomosci" PO KOLEI, jedna po drugiej —
-   nie tylko pierwszą, nie tylko najbardziej oczywistą. Lista może mieć kilkanaście
-   wiadomości i w KAŻDEJ z osobna może być inna prośba — zwróć wpis dla KAŻDEJ wiadomości,
-   w której coś takiego znajdziesz, a nie tylko dla jednej. Jeśli żadna wiadomość niczego
-   takiego nie zawiera, zwróć pustą listę; jeśli trzy wiadomości coś takiego zawierają,
-   zwróć trzy wpisy.
-   Np. "proszę o przygotowanie na poniedziałek: słoik, balon..."
-   to jeden wpis z text="Przygotować: słoik, balon, mąka ziemniaczana" i due=najbliższy
-   poniedziałek licząc od dzisiejszej daty. Jeśli wiadomość nie podaje konkretnego dnia,
-   ustaw due na null.
-   [{"text": string, "due": "YYYY-MM-DD" albo null}]
-
 Puste sekcje zwracaj jako []. Odpowiedz WYŁĄCZNIE poprawnym JSON-em.
 
 Dane wejściowe:
@@ -1064,20 +1049,22 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
   console.log(`[${child.name}] uwagi: nowo zgłoszone przez Gemini ${ai.sections.remarksAll.length}, łącznie po scaleniu ${raw.extra.remarkList.length}`);
   delete ai.sections.remarksAll; // już przeniesione do extra.remarkList — nie dublujemy w bazie
 
-  // Rzeczy do zrobienia z treści wiadomości: scalamy z poprzednio znalezionymi (po stabilnym
-  // kluczu z treści — Gemini nie daje nam id wiadomości źródłowej, więc dedupujemy po tekście),
-  // żeby ta sama prośba nie pojawiła się dwa razy i żeby nie zniknęła, gdy źródłowa wiadomość
-  // z czasem wypadnie poza okno, jakie dostaje Gemini.
+  // Rzeczy do zrobienia z treści wiadomości: osobne, dzielone na małe partie zapytanie (patrz
+  // extractTodosFromMessages) — jeden duży prompt ze wszystkimi wiadomościami naraz zawodził,
+  // Gemini gubił część próśb mimo wyraźnej instrukcji "sprawdź każdą". Scalamy z poprzednio
+  // znalezionymi (po stabilnym kluczu z treści — nie mamy id wiadomości źródłowej, więc
+  // dedupujemy po tekście), żeby ta sama prośba nie pojawiła się dwa razy i żeby nie zniknęła,
+  // gdy źródłowa wiadomość z czasem wypadnie poza okno, jakie dostaje Gemini.
+  const foundTodos = msgsForAi.length ? await extractTodosFromMessages(child.name, msgsForAi, today) : [];
   const todoKey = (t) => createHash("md5").update(`${t.text || ""}|${t.due || ""}`).digest("hex").slice(0, 16);
   const mergedMsgTodos = new Map();
   for (const t of previousMessageTodos) if (t?.id != null) mergedMsgTodos.set(t.id, t);
-  for (const t of ai.sections.todo) {
+  for (const t of foundTodos) {
     const id = todoKey(t);
     mergedMsgTodos.set(id, { id, text: t.text, due: t.due });
   }
   raw.extra.messageTodos = [...mergedMsgTodos.values()];
-  if (ai.sections.todo.length) console.log(`[${child.name}] z wiadomości do zrobienia: nowo zgłoszone ${ai.sections.todo.length}, łącznie ${raw.extra.messageTodos.length}`);
-  delete ai.sections.todo; // już przeniesione do extra.messageTodos
+  if (foundTodos.length) console.log(`[${child.name}] z wiadomości do zrobienia: nowo zgłoszone ${foundTodos.length}, łącznie ${raw.extra.messageTodos.length}`);
 
   // Sprawdziany/kartkówki: zastępujemy to, co na ten dzień ewentualnie zgadło Gemini (z tytułem
   // bywającym bałaganem i bez pewnego zakresu materiału) naszą wersją zbudowaną wprost z Librusa —
@@ -1148,6 +1135,61 @@ function buildWeeklyStats(results, today) {
         innychTerminowPrzedNami: upcoming.length - exams.length,
       };
     });
+}
+
+// Ile wiadomości naraz prosimy Gemini o przejrzenie pod kątem próśb nauczyciela. Mniejsza partia
+// niż "wszystkie naraz" (bywało 17-20) — model przy krótszej liście rzetelniej sprawdza KAŻDĄ
+// pozycję, zamiast gubić część z nich przy długiej liście mimo wyraźnej instrukcji.
+const TODO_BATCH_SIZE = 5;
+
+// Wyłapuje prośby typu "proszę przynieść/wpłacić/przygotować..." z treści wiadomości — jedno
+// zapytanie do Gemini na małą partię wiadomości (patrz TODO_BATCH_SIZE), żeby model rzetelnie
+// sprawdził każdą z osobna, zamiast gubić część przy długiej liście naraz.
+async function extractTodosFromBatch(childName, batch, today) {
+  const prompt = `
+Jesteś asystentem rodzica ucznia (imię: ${childName}). Poniżej masz ${batch.length} wiadomości
+z dziennika elektronicznego (pole "tresc" to pełna treść, nie tylko temat).
+
+Przejrzyj KAŻDĄ wiadomość z osobna i wypisz rzeczy, które rodzic/uczeń ma ZROBIĆ, PRZYNIEŚĆ,
+WPŁACIĆ lub POTWIERDZIĆ. Jedna wiadomość może dać zero, jeden albo więcej wpisów. Jeśli żadna
+wiadomość niczego takiego nie zawiera, zwróć pustą listę.
+
+Np. "proszę o przygotowanie na poniedziałek: słoik, balon..." to jeden wpis z
+text="Przygotować: słoik, balon, mąka ziemniaczana" i due=najbliższy poniedziałek licząc od
+dzisiejszej daty (dziś: ${today}). Jeśli wiadomość nie podaje konkretnego dnia, ustaw due na null.
+
+Odpowiedz WYŁĄCZNIE poprawnym JSON-em: [{"text": string, "due": "YYYY-MM-DD" albo null}]
+
+Wiadomości:
+${JSON.stringify(batch)}
+`.trim();
+
+  let data;
+  try {
+    data = await callGemini(GEMINI_MODEL, prompt);
+  } catch (err) {
+    const canFallback = GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== GEMINI_MODEL && RETRY_STATUS.has(err.status);
+    if (!canFallback) throw err;
+    data = await callGemini(GEMINI_FALLBACK_MODEL, prompt);
+  }
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Pusta odpowiedź z Gemini (zadania z wiadomości)");
+  const cleaned = text.replace(/^\s*```(?:json)?/i, "").replace(/```\s*$/, "").trim();
+  const parsed = JSON.parse(cleaned);
+  return asArray(parsed).map((t) => ({ text: str(t.text), due: nul(t.due) })).filter((t) => t.text);
+}
+
+async function extractTodosFromMessages(childName, messages, today) {
+  const out = [];
+  for (let i = 0; i < messages.length; i += TODO_BATCH_SIZE) {
+    const batch = messages.slice(i, i + TODO_BATCH_SIZE);
+    try {
+      out.push(...(await extractTodosFromBatch(childName, batch, today)));
+    } catch (err) {
+      console.warn(`  ! zadania z wiadomości (partia ${i / TODO_BATCH_SIZE + 1}): ${err.message}`);
+    }
+  }
+  return out;
 }
 
 // Materiał do nauki (kluczowe punkty + pytania kontrolne) do konkretnego sprawdzianu/kartkówki.
