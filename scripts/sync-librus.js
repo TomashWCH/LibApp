@@ -868,14 +868,18 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
   // Sprawdzamy surową stronę sami, żeby zobaczyć, ile wierszy naprawdę jest w odpowiedzi HTML
   // i czy jest tam coś wskazującego na stronicowanie.
   try {
-    const rawHtml = await client.caller.get("https://synergia.librus.pl/wiadomosci/6").then((r) => r.data);
+    const r = await client.caller.get("https://synergia.librus.pl/wiadomosci/6");
+    const rawHtml = r.data;
     const $ = cheerio.load(rawHtml);
-    const rowsLibLike = $("table.container-message table.decorated.stretch tbody tr").length;
-    const rowsAnyDecorated = $("table.decorated tbody tr").length;
-    const rowsAnyTr = $("tbody tr").length;
-    const bodyText = $("body").text();
-    const pageHint = bodyText.match(/strona\s*\d+\s*z\s*\d+|następna\s*stron\w*|poprzednia\s*stron\w*|wyświetl\w*\s*\d+/i)?.[0] || "(brak wzmianki o stronach)";
-    console.log(`  [diagnostyka wiadomości] wiersze (selektor biblioteki): ${rowsLibLike} | wiersze (table.decorated): ${rowsAnyDecorated} | wiersze (dowolna tbody tr): ${rowsAnyTr} | wzmianka o stronicowaniu: "${pageHint}"`);
+    const tables = $("table").map((_, t) => {
+      const cls = $(t).attr("class") || "(bez klasy)";
+      const rows = $(t).find("tbody tr").length || $(t).find("tr").length;
+      return `${cls}=${rows}`;
+    }).get();
+    const links = $("a[href]").map((_, a) => $(a).attr("href")).get()
+      .filter((h) => /stron|page|limit|offset|lp=|ile=/i.test(h))
+      .slice(0, 10);
+    console.log(`  [diagnostyka wiadomości] status: ${r.status} | długość HTML: ${rawHtml.length} znaków | tabele (klasa=wiersze): ${JSON.stringify(tables)} | linki ze wzmianką o stronach: ${JSON.stringify(links)}`);
   } catch (err) {
     console.warn(`  ! diagnostyka wiadomości: ${err.message}`);
   }
