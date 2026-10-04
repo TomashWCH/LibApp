@@ -217,7 +217,14 @@ Z poniższych danych JSON przygotuj obiekt z polami:
 
 8. "todo" — rzeczy, które rodzic/uczeń ma ZROBIĆ, PRZYNIEŚĆ, WPŁACIĆ lub POTWIERDZIĆ,
    wyłowione z PEŁNEJ TREŚCI wiadomości (pole "tresc" w punkcie "wiadomosci" powyżej —
-   nie tylko temat). Np. "proszę o przygotowanie na poniedziałek: słoik, balon..."
+   nie tylko temat).
+   WAŻNE: przejrzyj KAŻDĄ wiadomość z listy "wiadomosci" PO KOLEI, jedna po drugiej —
+   nie tylko pierwszą, nie tylko najbardziej oczywistą. Lista może mieć kilkanaście
+   wiadomości i w KAŻDEJ z osobna może być inna prośba — zwróć wpis dla KAŻDEJ wiadomości,
+   w której coś takiego znajdziesz, a nie tylko dla jednej. Jeśli żadna wiadomość niczego
+   takiego nie zawiera, zwróć pustą listę; jeśli trzy wiadomości coś takiego zawierają,
+   zwróć trzy wpisy.
+   Np. "proszę o przygotowanie na poniedziałek: słoik, balon..."
    to jeden wpis z text="Przygotować: słoik, balon, mąka ziemniaczana" i due=najbliższy
    poniedziałek licząc od dzisiejszej daty. Jeśli wiadomość nie podaje konkretnego dnia,
    ustaw due na null.
