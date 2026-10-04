@@ -23,6 +23,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------- Ustawienia ----------
 const NEW_DAYS = 7; // co uznajemy za "nowe" (oceny, uwagi, wiadomości)
+// Numer wersji instrukcji dla Gemini przy wychwytywaniu zadań z wiadomości (punkt 8 w promptcie).
+// Zwiększ tę liczbę za każdym razem, gdy zmienisz tamtą instrukcję — wiadomości oznaczone jako
+// "sprawdzone" pod STARĄ wersją dostaną wtedy jeszcze jedną szansę z nowym, lepszym poleceniem,
+// zamiast zostać pominięte na zawsze tylko dlatego, że raz już (niedoskonale) je sprawdzono.
+const TODO_SCAN_VERSION = 2;
 const EVENTS_AHEAD_DAYS = 60; // jak daleko w przód szukamy wydarzeń (kalendarz w appce)
 const TZ = "Europe/Warsaw";
 
@@ -1024,7 +1029,7 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
   // wiadomość, która z jakiegokolwiek powodu (np. dawny błąd z folderem) stała się appce widoczna
   // później niż tydzień od wysłania, nigdy nie zostałaby przez Gemini w ogóle przeczytana.
   const allMsgs = asArray(raw.extra.messages);
-  const msgsForAi = allMsgs.filter((m) => (m.data || "9999") >= since || !m.scannedByAi);
+  const msgsForAi = allMsgs.filter((m) => (m.data || "9999") >= since || m.scannedByAi !== TODO_SCAN_VERSION);
   const wiadomosciZTrescia = msgsForAi
     .map((m) => ({ od: m.od, temat: m.temat, data: m.data, nieprzeczytana: m.nieprzeczytana, tresc: cleanText(m.tresc, 1200) }));
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
@@ -1042,7 +1047,7 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
     gradeTrends
   );
   const scannedIds = new Set(msgsForAi.map((m) => m.id));
-  for (const m of allMsgs) if (scannedIds.has(m.id)) m.scannedByAi = true;
+  for (const m of allMsgs) if (scannedIds.has(m.id)) m.scannedByAi = TODO_SCAN_VERSION;
 
   // Pełna historia uwag: Gemini zgłasza WSZYSTKIE znalezione na stronie "uwagi_tekst" (punkt 3b
   // w promptcie, bez ograniczenia do "since"). Brak naturalnego id (to nie wiadomość z własnym
