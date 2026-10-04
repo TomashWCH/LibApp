@@ -863,6 +863,24 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
       safe("frekwencja", client.absence.getAbsences(), {}),
     ]);
 
+  // --- TYMCZASOWA DIAGNOSTYKA (usunąć po ustaleniu prawdziwej przyczyny) ---
+  // client.inbox.listInbox(6) zwraca tylko 5 wiadomości, mimo że na stronie jest ich więcej.
+  // Sprawdzamy surową stronę sami, żeby zobaczyć, ile wierszy naprawdę jest w odpowiedzi HTML
+  // i czy jest tam coś wskazującego na stronicowanie.
+  try {
+    const rawHtml = await client.caller.get("https://synergia.librus.pl/wiadomosci/6").then((r) => r.data);
+    const $ = cheerio.load(rawHtml);
+    const rowsLibLike = $("table.container-message table.decorated.stretch tbody tr").length;
+    const rowsAnyDecorated = $("table.decorated tbody tr").length;
+    const rowsAnyTr = $("tbody tr").length;
+    const bodyText = $("body").text();
+    const pageHint = bodyText.match(/strona\s*\d+\s*z\s*\d+|następna\s*stron\w*|poprzednia\s*stron\w*|wyświetl\w*\s*\d+/i)?.[0] || "(brak wzmianki o stronach)";
+    console.log(`  [diagnostyka wiadomości] wiersze (selektor biblioteki): ${rowsLibLike} | wiersze (table.decorated): ${rowsAnyDecorated} | wiersze (dowolna tbody tr): ${rowsAnyTr} | wzmianka o stronicowaniu: "${pageHint}"`);
+  } catch (err) {
+    console.warn(`  ! diagnostyka wiadomości: ${err.message}`);
+  }
+  // --- KONIEC TYMCZASOWEJ DIAGNOSTYKI ---
+
   const calendarAll = [calendarThis, calendarNext]
     .flat(Infinity)
     .filter((e) => e && e.title);
