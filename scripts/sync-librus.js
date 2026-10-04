@@ -879,7 +879,10 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
     const links = $("a[href]").map((_, a) => $(a).attr("href")).get()
       .filter((h) => /stron|page|limit|offset|lp=|ile=/i.test(h))
       .slice(0, 10);
-    console.log(`  [diagnostyka wiadomości] status: ${r.status} | długość HTML: ${rawHtml.length} znaków | tabele (klasa=wiersze): ${JSON.stringify(tables)} | linki ze wzmianką o stronach: ${JSON.stringify(links)}`);
+    // Prawdziwe numery folderów z bocznego menu (uwagi/odebrane/wysłane/kosz/Archiwum) — sprawdzamy,
+    // czy "6" (założenie biblioteki) naprawdę odpowiada "odebrane" dla tego konta.
+    const folderLinks = $("table.message-folders a[href], .message-folders a[href]").map((_, a) => `${$(a).text().trim()}→${$(a).attr("href")}`).get();
+    console.log(`  [diagnostyka wiadomości] status: ${r.status} | długość HTML: ${rawHtml.length} znaków | tabele (klasa=wiersze): ${JSON.stringify(tables)} | linki ze wzmianką o stronach: ${JSON.stringify(links)} | foldery: ${JSON.stringify(folderLinks)}`);
   } catch (err) {
     console.warn(`  ! diagnostyka wiadomości: ${err.message}`);
   }
