@@ -1014,8 +1014,13 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
   // wiadomość, która z jakiegokolwiek powodu (np. dawny błąd z folderem) stała się appce widoczna
   // później niż tydzień od wysłania, nigdy nie zostałaby przez Gemini w ogóle przeczytana.
   const allMsgs = asArray(raw.extra.messages);
-  const msgsForAi = allMsgs.filter((m) => (m.data || "9999") >= since || m.scannedByAi !== TODO_SCAN_VERSION);
-  const wiadomosciZTrescia = msgsForAi
+  // Dwa NIEZALEŻNE zestawy — wcześniej dzieliły ten sam warunek, co było błędem: wiadomość
+  // "świeża" (ostatnie NEW_DAYS dni) wracała do wyłapywania próśb przy KAŻDEJ synchronizacji
+  // przez cały tydzień, a Gemini za każdym razem formułowało tę samą prośbę odrobinę inaczej —
+  // stąd kilka niemal identycznych zadań zamiast jednego.
+  const msgsForSummary = allMsgs.filter((m) => (m.data || "9999") >= since);
+  const msgsForTodoScan = allMsgs.filter((m) => m.scannedByAi !== TODO_SCAN_VERSION);
+  const wiadomosciZTrescia = msgsForSummary
     .map((m) => ({ od: m.od, temat: m.temat, data: m.data, nieprzeczytana: m.nieprzeczytana, tresc: cleanText(m.tresc, 1200) }));
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
   const ai = await summarizeWithGemini(
@@ -1031,8 +1036,6 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
     since,
     gradeTrends
   );
-  const scannedIds = new Set(msgsForAi.map((m) => m.id));
-  for (const m of allMsgs) if (scannedIds.has(m.id)) m.scannedByAi = TODO_SCAN_VERSION;
 
   // Pełna historia uwag: Gemini zgłasza WSZYSTKIE znalezione na stronie "uwagi_tekst" (punkt 3b
   // w promptcie, bez ograniczenia do "since"). Brak naturalnego id (to nie wiadomość z własnym
@@ -1055,7 +1058,8 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
   // znalezionymi (po stabilnym kluczu z treści — nie mamy id wiadomości źródłowej, więc
   // dedupujemy po tekście), żeby ta sama prośba nie pojawiła się dwa razy i żeby nie zniknęła,
   // gdy źródłowa wiadomość z czasem wypadnie poza okno, jakie dostaje Gemini.
-  const foundTodos = msgsForAi.length ? await extractTodosFromMessages(child.name, msgsForAi, today) : [];
+  const foundTodos = msgsForTodoScan.length ? await extractTodosFromMessages(child.name, msgsForTodoScan, today) : [];
+  for (const m of msgsForTodoScan) m.scannedByAi = TODO_SCAN_VERSION; // każda wiadomość skanowana DOKŁADNIE raz na tę wersję instrukcji
   const todoKey = (t) => createHash("md5").update(`${t.text || ""}|${t.due || ""}`).digest("hex").slice(0, 16);
   const mergedMsgTodos = new Map();
   for (const t of previousMessageTodos) if (t?.id != null) mergedMsgTodos.set(t.id, t);
