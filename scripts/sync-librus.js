@@ -963,7 +963,7 @@ async function fetchLibrusData(login, password, today, since, until, attachmentC
 
 // ---------- Synchronizacja ----------
 // Pobiera i streszcza dane jednego dziecka.
-async function syncChild(child, attachmentCache, previousRemarks = [], previousStudyMaterial = []) {
+async function syncChild(child, attachmentCache, previousRemarks = [], previousStudyMaterial = [], previousMessages = []) {
   const loginEnv = `LIBRUS_LOGIN_${child.secretSuffix}`;
   const passEnv = `LIBRUS_PASSWORD_${child.secretSuffix}`;
   const login = process.env[loginEnv];
@@ -980,6 +980,15 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
 
   console.log(`[${child.name}] Logowanie do Librusa i pobieranie danych...`);
   const raw = await fetchLibrusData(login, password, today, since, until, attachmentCache);
+
+  // Wiadomości: dokładamy świeżo pobrane do tych z poprzednich synchronizacji (po id), żeby
+  // wiadomość raz pokazana w appce nie zniknęła, gdy stanie się jednocześnie "przeczytana i stara"
+  // i przestanie się mieścić w oknie, jakie appka pobiera na bieżąco. Limit 60, żeby nie rosło
+  // bez końca przez cały rok szkolny.
+  const freshMsgIds = new Set(raw.extra.messages.map((m) => m.id));
+  const keptOldMsgs = previousMessages.filter((m) => m?.id != null && !freshMsgIds.has(m.id));
+  raw.extra.messages = [...raw.extra.messages, ...keptOldMsgs].slice(0, 60);
+  console.log(`[${child.name}] wiadomości: świeżych ${freshMsgIds.size}, zachowanych ze starszych synchronizacji ${keptOldMsgs.length}, łącznie ${raw.extra.messages.length}`);
 
   console.log(
     `[${child.name}] oceny: ${raw.extra.gradeList.length}, plan: ${raw.extra.timetable.length} dni, zadania: ${raw.extra.homework.length}, numerek: ${raw.extra.luckyNumber ?? "-"}, frekwencja: ${raw.extra.absence.total} (${Object.entries(raw.extra.absence.byType).map(([k, v]) => `${k}×${v}`).join(" ") || "brak"})`
@@ -1228,11 +1237,15 @@ async function syncUser(user) {
   // Materiał do nauki wygenerowany wcześniej dla danego sprawdzianu (po jego stałym id z Librusa) —
   // nie generujemy go drugi raz, tylko dokładamy do każdego dnia, aż wydarzenie zniknie z terminarza.
   const getPreviousStudyMaterial = (secretSuffix) => asArray(previousChildren[secretSuffix]?.extra?.studyMaterial);
+  // Wiadomości: appka sama oznacza wiadomość jako przeczytaną, gdy pobiera jej treść — a pobiera
+  // tylko nieprzeczytane LUB nowsze niż tydzień. Bez pamięci wiadomość, którą appka właśnie
+  // pokazała, za tydzień wypadnie z tego okna i zniknie, mimo że wciąż jest na Librusie.
+  const getPreviousMessages = (secretSuffix) => asArray(previousChildren[secretSuffix]?.extra?.messages);
 
   const results = [];
   for (const child of children) {
     try {
-      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix), getPreviousRemarks(child.secretSuffix), getPreviousStudyMaterial(child.secretSuffix))) });
+      results.push({ child, ok: true, ...(await syncChild(child, buildAttachmentCache(child.secretSuffix), getPreviousRemarks(child.secretSuffix), getPreviousStudyMaterial(child.secretSuffix), getPreviousMessages(child.secretSuffix))) });
     } catch (err) {
       console.error(`[${child.name}] BŁĄD:`, err.message);
       results.push({ child, ok: false, error: err.message });
