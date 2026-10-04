@@ -592,6 +592,11 @@
   .wk-dh { font-weight: 700; font-size: 0.88rem; padding: 6px 0 0; }
   .fld-h { font-weight: 700; margin: 0 0 6px; display: flex; align-items: center; gap: 8px; }
   .fld { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .ea-row { display: flex; align-items: center; gap: 6px; margin: 6px 0; }
+  .ea-row select { flex: 0 0 64px; padding: 7px 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: .82rem; }
+  .ea-row input[data-ea="title"] { flex: 1.3; min-width: 0; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: .85rem; }
+  .ea-row input[data-ea="time"] { flex: 1; min-width: 0; padding: 7px 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); font-size: .85rem; }
+  .ea-row button { flex: 0 0 auto; width: 30px; height: 30px; border-radius: 8px; font-size: .85rem; }
   .fld > span { width: 84px; flex: none; }
   .fld input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
   .btn-small { padding: 10px 16px; font-size: 0.92rem; border-radius: 12px; margin-top: 8px; display: inline-flex; align-items: center; gap: 8px; }
@@ -655,7 +660,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  const BUILD = "2026-10-04 · 39"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
+  const BUILD = "2026-10-05 · 40"; // zmienia się przy każdej nowej wersji pliku — pozwala sprawdzić, co jest wgrane
   const BUILD_DISPLAY = BUILD.split(" · ")[0].split("-").reverse().join("."); // "24.09.2026" — bez numeru rewizji, dla użytkownika
   // Dane rodziny są przypisane do jednego konta (Tomasz). Każde dozwolone konto Google,
   // które się zaloguje (patrz firestore.rules), czyta i zapisuje TEN SAM dokument — dzięki temu
@@ -1440,13 +1445,16 @@
   // ---------- zajęcia pozalekcyjne (stałe w tygodniu, dopisane ręcznie — nie z Librusa) ----------
   // Klucz to sekretSuffix dziecka (DZIECKO1/DZIECKO2 z users.config.json). Dzień tygodnia: 1=poniedziałek … 7=niedziela.
   // Żeby zmienić lub dodać zajęcia, edytuj tę listę i wgraj nowy plik.
-  const EXTRA_ACTIVITIES = {
+  // Domyślne/startowe zajęcia dodatkowe — używane tylko dopóki w Ustawieniach (prefs) nie ma
+  // jeszcze własnych, zapisanych przez rodzica. Od tego miejsca appka czyta z state.extraActivities,
+  // które można edytować wprost w appce (Ustawienia → Zajęcia dodatkowe).
+  const DEFAULT_EXTRA_ACTIVITIES = {
     DZIECKO1: [ // Patryk
       { day: 1, title: "Judo", time: "18:00-19:00" },
-      { day: 2, title: "Piłka", time: "16:00-17:00" },
+      { day: 2, title: "Piłka", time: "17:15-18:15" },
       { day: 2, title: "Python", time: "18:00-19:30" },
       { day: 3, title: "Judo", time: "18:00-19:00" },
-      { day: 4, title: "Piłka", time: "16:00-17:00" },
+      { day: 4, title: "Piłka", time: "17:15-18:15" },
     ],
     DZIECKO2: [ // Zuzia
       { day: 2, title: "Tańce", time: "17:00-18:00" },
@@ -1458,7 +1466,7 @@
     if (!isoDate.test(iso || "")) return [];
     const [y, m, dd] = iso.split("-").map(Number);
     const weekday = new Date(y, m - 1, dd).getDay() || 7; // niedziela (0) -> 7
-    return (EXTRA_ACTIVITIES[childKey] || [])
+    return arr(state.extraActivities?.[childKey])
       .filter((a) => a.day === weekday)
       .map((a) => ({ nr: null, time: a.time, title: a.title, teacher: "", room: "", flag: "zajęcia dodatkowe" }));
   }
@@ -1793,6 +1801,38 @@
     return `<p class="empty">${okText}${failed ? ` W tym ${failed} zakończyło się błędem (np. szkoła lub asystent AI chwilowo nie odpowiadały).` : ""}</p>`;
   }
 
+  const EA_DAYS = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Ndz"];
+  function extraActivitiesHtml(d) {
+    const kids = getChildren(d);
+    if (!kids.length) return "";
+    const dayOpts = (sel) => EA_DAYS.map((lbl, i) => `<option value="${i + 1}" ${sel === i + 1 ? "selected" : ""}>${lbl}</option>`).join("");
+    const rows = kids.map((k) => {
+      const acts = arr(state.extraActivities?.[k.key]);
+      const rowsHtml = acts.map((a, i) => `<div class="ea-row">
+          <select data-ea="day" data-ea-child="${esc(k.key)}" data-ea-idx="${i}">${dayOpts(a.day)}</select>
+          <input data-ea="title" data-ea-child="${esc(k.key)}" data-ea-idx="${i}" value="${esc(a.title || "")}" placeholder="Nazwa" maxlength="40" />
+          <input data-ea="time" data-ea-child="${esc(k.key)}" data-ea-idx="${i}" value="${esc(a.time || "")}" placeholder="16:00-17:00" maxlength="11" />
+          <button data-ea-del data-ea-child="${esc(k.key)}" data-ea-idx="${i}" aria-label="Usuń" class="btn-quiet2">✕</button>
+        </div>`).join("");
+      return `<div class="sub-hd">${esc(k.name)}</div>${rowsHtml || `<p class="empty" style="margin:0 0 8px">Brak zajęć dodatkowych.</p>`}
+        <button data-ea-add="${esc(k.key)}" class="btn btn-small btn-quiet2">+ Dodaj zajęcia</button>`;
+    }).join("");
+    return `<div class="fld-h">${icon("clock")} Zajęcia dodatkowe</div>
+      <p class="empty" style="margin:0 0 8px">Stałe zajęcia w tygodniu (np. piłka, taniec) — pokazują się w planie lekcji obok lekcji szkolnych. Zmiana zapisuje się od razu.</p>
+      ${rows}`;
+  }
+
+  async function saveExtraActivities() {
+    const ref = prefsRef();
+    if (!ref) return;
+    try {
+      await setDoc(ref, { extraActivities: state.extraActivities || {} }, { merge: true });
+    } catch (err) {
+      toast("Nie udało się zapisać zajęć dodatkowych — spróbuj ponownie.", true);
+      console.error(err);
+    }
+  }
+
   function settingsCard(d) {
     const kids = getChildren(d);
     const letters = detectedLetters(d);
@@ -1828,7 +1868,7 @@
     const themeBtn = (val, label) => `<button data-theme-set="${val}" class="${theme === val ? "on" : ""}" aria-pressed="${theme === val}">${label}</button>`;
     const themeHtml = `<div class="fld-h">${icon("moon")} Motyw</div>
       <div class="seg" style="margin-top:0 0 4px">${themeBtn("system", "Systemowy")}${themeBtn("light", "Jasny")}${themeBtn("dark", "Ciemny")}</div>`;
-    return `<details class="card t-settings"><summary>${icon("sliders")} Ustawienia</summary>${themeHtml}${names}${scaleHtml}
+    return `<details class="card t-settings"><summary>${icon("sliders")} Ustawienia</summary>${themeHtml}${names}${extraActivitiesHtml(d)}${scaleHtml}
       <div class="fld-h" style="margin-top:16px">${icon("clock")} Kondycja synchronizacji</div>
       ${syncHealthLine(d)}
       <div class="fld-h" style="margin-top:16px">${icon("bell")} Powiadomienia</div>${notif}</details>`;
@@ -2281,6 +2321,23 @@
     if (e.key === "Enter" && e.target.id === "search-input") { e.preventDefault(); runSearch(); }
   });
   document.addEventListener("click", (e) => {
+    const eaAdd = e.target.closest("[data-ea-add]");
+    if (eaAdd) {
+      const key = eaAdd.dataset.eaAdd;
+      state.extraActivities = state.extraActivities || {};
+      state.extraActivities[key] = [...arr(state.extraActivities[key]), { day: 1, title: "", time: "" }];
+      saveExtraActivities();
+      render();
+      return;
+    }
+    const eaDel = e.target.closest("[data-ea-del]");
+    if (eaDel) {
+      const key = eaDel.dataset.eaChild, idx = Number(eaDel.dataset.eaIdx);
+      state.extraActivities[key] = arr(state.extraActivities[key]).filter((_, i) => i !== idx);
+      saveExtraActivities();
+      render();
+      return;
+    }
     if (e.target.closest("#profile-btn")) { state.profileOpen = true; render(); return; }
     if (e.target.closest("#bell-btn")) {
       if (state.view !== "pulpit") { state.view = "pulpit"; render(); }
@@ -2386,6 +2443,17 @@
     if (e.target.closest("#logout-btn")) signOut(auth);
   });
 
+  document.addEventListener("change", (e) => {
+    const el = e.target.closest("[data-ea]");
+    if (!el) return;
+    const key = el.dataset.eaChild, idx = Number(el.dataset.eaIdx), field = el.dataset.ea;
+    const list = arr(state.extraActivities?.[key]);
+    if (!list[idx]) return;
+    list[idx] = { ...list[idx], [field]: field === "day" ? Number(el.value) : el.value.trim() };
+    state.extraActivities[key] = list;
+    saveExtraActivities();
+  });
+
   $("#login-btn").addEventListener("click", () => {
     signInWithPopup(auth, provider).catch((e) => toast("Logowanie nie powiodło się. Spróbuj ponownie.", true));
   });
@@ -2410,6 +2478,7 @@
         state.names = (snap.exists() && snap.data().names) || {};
         state.manualTodos = (snap.exists() && arr(snap.data().manualTodos)) || [];
         state.scaleText = (snap.exists() && snap.data().letterScale) || "";
+        state.extraActivities = (snap.exists() && snap.data().extraActivities) || DEFAULT_EXTRA_ACTIVITIES;
         { const parsed = parseLetterMap(state.scaleText); letterMap = Object.keys(parsed).length ? parsed : parseLetterMap(DEFAULT_LETTERS); }
         if (snap.exists()) {
           remoteDone = new Set(arr(snap.data().done));
