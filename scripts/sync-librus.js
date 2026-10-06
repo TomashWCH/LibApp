@@ -28,6 +28,12 @@ const NEW_DAYS = 7; // co uznajemy za "nowe" (oceny, uwagi, wiadomości)
 // "sprawdzone" pod STARĄ wersją dostaną wtedy jeszcze jedną szansę z nowym, lepszym poleceniem,
 // zamiast zostać pominięte na zawsze tylko dlatego, że raz już (niedoskonale) je sprawdzono.
 const TODO_SCAN_VERSION = 2;
+// Jak daleko wstecz appka "dogania" wiadomości, których jeszcze nie skanowała pod kątem zadań
+// (np. po dawnym błędzie z folderem, albo po podniesieniu TODO_SCAN_VERSION). Specjalnie szersze
+// niż NEW_DAYS (7) — żeby łapać niedawno przeoczone sprawy — ale NIE bez ograniczenia: appka ma
+// 60 zapamiętanych wiadomości, więc bez granicy jedno "doganianie" zalałoby listę zadaniami
+// sprzed tygodni, które są już praktycznie nieaktualne.
+const TODO_CATCHUP_DAYS = 21;
 const EVENTS_AHEAD_DAYS = 60; // jak daleko w przód szukamy wydarzeń (kalendarz w appce)
 const TZ = "Europe/Warsaw";
 
@@ -990,6 +996,7 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
   const today = isoInWarsaw(nowDate);
   const since = isoInWarsaw(shiftDays(nowDate, -NEW_DAYS));
   const until = isoInWarsaw(shiftDays(nowDate, EVENTS_AHEAD_DAYS));
+  const todoCatchupSince = isoInWarsaw(shiftDays(nowDate, -TODO_CATCHUP_DAYS));
 
   console.log(`[${child.name}] Logowanie do Librusa i pobieranie danych...`);
   const raw = await fetchLibrusData(login, password, today, since, until, attachmentCache);
@@ -1019,7 +1026,7 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
   // przez cały tydzień, a Gemini za każdym razem formułowało tę samą prośbę odrobinę inaczej —
   // stąd kilka niemal identycznych zadań zamiast jednego.
   const msgsForSummary = allMsgs.filter((m) => (m.data || "9999") >= since);
-  const msgsForTodoScan = allMsgs.filter((m) => m.scannedByAi !== TODO_SCAN_VERSION);
+  const msgsForTodoScan = allMsgs.filter((m) => m.scannedByAi !== TODO_SCAN_VERSION && (m.data || "9999") >= todoCatchupSince);
   const wiadomosciZTrescia = msgsForSummary
     .map((m) => ({ od: m.od, temat: m.temat, data: m.data, nieprzeczytana: m.nieprzeczytana, tresc: cleanText(m.tresc, 1200) }));
   console.log(`[${child.name}] Generowanie podsumowania (Gemini)...`);
@@ -1067,8 +1074,28 @@ async function syncChild(child, attachmentCache, previousRemarks = [], previousS
     const id = todoKey(t);
     mergedMsgTodos.set(id, { id, text: t.text, due: t.due });
   }
-  raw.extra.messageTodos = [...mergedMsgTodos.values()];
-  if (foundTodos.length) console.log(`[${child.name}] z wiadomości do zrobienia: nowo zgłoszone ${foundTodos.length}, łącznie ${raw.extra.messageTodos.length}`);
+  // Sprzątanie niemal identycznych wpisów: dawny błąd (ta sama wiadomość skanowana wiele razy,
+  // za każdym razem lekko inną redakcją tekstu przez Gemini) zostawił w bazie takie bliźniacze
+  // wpisy — ten sam termin, prawie ten sam tekst. Zamiast kazać rodzicowi ręcznie je odznaczać,
+  // scalamy je tu automatycznie, zachowując najdłuższą (najbardziej szczegółową) wersję tekstu.
+  const wordsOf = (s) => new Set((s || "").replace(/https?:\/\/\S+/gi, "").toLowerCase().match(/[a-ząćęłńóśźż]+/gi) || []);
+  const textSimilarity = (a, b) => {
+    const wa = wordsOf(a), wb = wordsOf(b);
+    if (!wa.size || !wb.size) return 0;
+    let inter = 0;
+    for (const w of wa) if (wb.has(w)) inter++;
+    return inter / Math.min(wa.size, wb.size); // ile ze SPECYFICZNIEJSZEGO (krótszego) tekstu pokrywa się z drugim
+  };
+  const deduped = [];
+  for (const t of mergedMsgTodos.values()) {
+    const dup = deduped.find((k) => k.due === t.due && textSimilarity(k.text, t.text) >= 0.7);
+    if (!dup) deduped.push(t);
+    else if ((t.text || "").length > (dup.text || "").length) dup.text = t.text; // zachowaj dłuższą wersję
+  }
+  raw.extra.messageTodos = deduped;
+  if (foundTodos.length || deduped.length < mergedMsgTodos.size) {
+    console.log(`[${child.name}] z wiadomości do zrobienia: nowo zgłoszone ${foundTodos.length}, scalonych jako duplikaty ${mergedMsgTodos.size - deduped.length}, łącznie ${raw.extra.messageTodos.length}`);
+  }
 
   // Sprawdziany/kartkówki: zastępujemy to, co na ten dzień ewentualnie zgadło Gemini (z tytułem
   // bywającym bałaganem i bez pewnego zakresu materiału) naszą wersją zbudowaną wprost z Librusa —
